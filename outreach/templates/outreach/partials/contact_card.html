@@ -1,0 +1,212 @@
+<div id="contact-card-{{ contact.pk }}"
+     class="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 sm:p-5 space-y-4">
+  {% if feedback %}
+    <div class="px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-800 flex items-center justify-between gap-2">
+      <span>{{ feedback }}</span>
+      {% if reply_wame_url %}
+        <a href="{{ reply_wame_url }}" target="_blank" rel="noopener"
+           class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 shrink-0">
+          Open Reply in WhatsApp &rarr;
+        </a>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <!-- Header Row -->
+  <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+    <div>
+      <div class="flex flex-wrap items-center gap-2">
+        <h2 class="text-base sm:text-lg font-bold text-slate-900">{{ contact.full_name }}</h2>
+        <span class="text-xs font-mono px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
+          {{ contact.phone_e164 }}
+        </span>
+        {% if contact.location_met %}
+          <span class="text-xs px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 font-medium">
+            {{ contact.location_met }}
+          </span>
+        {% endif %}
+      </div>
+
+      <div class="text-xs text-slate-500 mt-1 flex flex-wrap gap-x-3 gap-y-1">
+        <span>Step {{ contact.ui_step }} of 3</span>
+        {% if contact.soul_winner_name %}
+          <span>Soul-winner: {{ contact.soul_winner_name }}</span>
+        {% endif %}
+        <a href="{{ contact.ui_rsvp_url }}" target="_blank" class="text-emerald-700 underline">
+          RSVP Card
+        </a>
+      </div>
+    </div>
+
+    <!-- Status Pills -->
+    <div class="flex flex-wrap items-center gap-1.5">
+      <span class="px-2.5 py-1 rounded-full text-xs font-semibold
+        {% if contact.drip_status == 'REPLIED' %}bg-indigo-100 text-indigo-800
+        {% elif contact.drip_status == 'ACTIVE' %}bg-emerald-100 text-emerald-800
+        {% elif contact.drip_status == 'MANUAL_FALLBACK' %}bg-amber-100 text-amber-800
+        {% elif contact.drip_status == 'COMPLETED' %}bg-teal-100 text-teal-800
+        {% elif contact.drip_status == 'OPTED_OUT' %}bg-rose-100 text-rose-800
+        {% else %}bg-slate-100 text-slate-700{% endif %}">
+        {{ contact.get_drip_status_display }}
+      </span>
+
+      {% if contact.ui_in_window %}
+        <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          {{ contact.window_remaining_label }}
+        </span>
+      {% else %}
+        <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
+          24h Window Closed
+        </span>
+      {% endif %}
+
+      {% if contact.rsvp_status != 'NONE' %}
+        <span class="px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-800 border border-teal-200">
+          RSVP: {{ contact.get_rsvp_status_display }}
+          {% if contact.rsvp_pickup_landmark %}({{ contact.rsvp_pickup_landmark }}){% endif %}
+        </span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if contact.prayer_point %}
+    <div class="bg-amber-50/70 border border-amber-200/80 rounded-xl px-3.5 py-2.5 text-sm text-amber-950">
+      <span class="font-semibold text-xs uppercase tracking-wide text-amber-800 block mb-0.5">Prayer Request</span>
+      {{ contact.prayer_point }}
+    </div>
+  {% endif %}
+
+  <!-- Mode B: 1-Tap wa.me Personalized Action Box -->
+  {% if contact.drip_status != 'COMPLETED' and contact.drip_status != 'OPTED_OUT' %}
+    <div class="bg-slate-50 rounded-xl border border-slate-200 p-3.5 space-y-2.5">
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Next Follow-Up (Step {{ contact.ui_step }}) — Personalized Draft
+        </span>
+        <span class="text-[11px] font-medium text-emerald-700">$0.00 via Phone</span>
+      </div>
+      <p class="text-xs sm:text-sm text-slate-700 whitespace-pre-line leading-relaxed">{{ contact.ui_preview_text }}</p>
+
+      <div class="flex flex-wrap gap-2 pt-1">
+        <a href="{{ contact.ui_wame_url }}" target="_blank" rel="noopener"
+           class="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-semibold shadow-xs transition">
+          1-Tap Open in WhatsApp (wa.me) &rarr;
+        </a>
+
+        <button type="button"
+                hx-post="{% url 'outreach:mark_manual_sent' contact.pk %}"
+                hx-target="#contact-card-{{ contact.pk }}"
+                hx-swap="outerHTML"
+                class="inline-flex items-center justify-center px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs sm:text-sm font-semibold transition">
+          Mark Step {{ contact.ui_step }} Sent
+        </button>
+
+        {% if WA_CLOUD_API_ENABLED %}
+          <button type="button"
+                  hx-post="{% url 'outreach:trigger_step_now' contact.pk %}"
+                  hx-target="#contact-card-{{ contact.pk }}"
+                  hx-swap="outerHTML"
+                  class="inline-flex items-center justify-center px-3.5 py-2.5 rounded-xl bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 text-xs sm:text-sm font-semibold transition">
+            Send via Cloud API Router
+          </button>
+        {% endif %}
+
+        <button type="button"
+                hx-post="{% url 'outreach:toggle_opt_out' contact.pk %}"
+                hx-target="#contact-card-{{ contact.pk }}"
+                hx-swap="outerHTML"
+                class="inline-flex items-center justify-center px-3 py-2.5 rounded-xl bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 text-xs font-semibold transition ml-auto">
+          Opt Out
+        </button>
+      </div>
+    </div>
+  {% elif contact.is_opted_out %}
+    <div class="flex items-center justify-between bg-rose-50 rounded-xl border border-rose-200 px-3.5 py-2.5 text-xs text-rose-800">
+      <span>Contact is opted out (STOP). No outreach messages will be sent.</span>
+      <button type="button"
+              hx-post="{% url 'outreach:toggle_opt_out' contact.pk %}"
+              hx-target="#contact-card-{{ contact.pk }}"
+              hx-swap="outerHTML"
+              class="px-2.5 py-1 rounded-lg bg-white border border-rose-300 hover:bg-rose-100 text-rose-700 font-semibold">
+        Re-enable
+      </button>
+    </div>
+  {% endif %}
+
+  <!-- Message History + HTML5 Voice Note Audio Player -->
+  {% with msgs=contact.messages.all %}
+    {% if msgs %}
+      <div class="space-y-2 border-t border-slate-100 pt-3">
+        <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Message &amp; Voice Note Thread
+        </div>
+        <div class="space-y-2 max-h-60 overflow-y-auto pr-1">
+          {% for msg in msgs %}
+            <div class="rounded-xl px-3 py-2 text-xs sm:text-sm
+              {% if msg.direction == 'INBOUND' %}bg-indigo-50 border border-indigo-100 text-slate-800 mr-6{% else %}bg-emerald-50/70 border border-emerald-100 text-slate-800 ml-6{% endif %}">
+              <div class="flex items-center justify-between gap-2 text-[11px] text-slate-500 mb-1">
+                <span class="font-semibold">
+                  {% if msg.direction == 'INBOUND' %}{{ contact.first_name }}{% else %}CarePulse ({{ msg.get_channel_display }}){% endif %}
+                </span>
+                <span>
+                  {{ msg.created_at|date:"M d, H:i" }} &middot; {{ msg.get_delivery_status_display }}
+                  {% if msg.estimated_cost_usd > 0 %}&middot; ${{ msg.estimated_cost_usd }}{% endif %}
+                </span>
+              </div>
+              {% if msg.body %}
+                <p class="whitespace-pre-line">{{ msg.body }}</p>
+              {% endif %}
+              {% if msg.message_type == 'AUDIO' and msg.media_file %}
+                <div class="mt-2">
+                  <audio controls preload="none" class="w-full h-9">
+                    <source src="{{ msg.media_file.url }}" type="{{ msg.media_mime_type|default:'audio/ogg' }}" />
+                    Your browser does not support audio playback.
+                  </audio>
+                </div>
+              {% elif msg.message_type == 'IMAGE' and msg.media_file %}
+                <img src="{{ msg.media_file.url }}" alt="WhatsApp attachment" class="mt-2 max-h-40 rounded-lg border border-slate-200" />
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <!-- Quick Reply + Pastoral Note Forms (HTMX) -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+    <form hx-post="{% url 'outreach:coordinator_reply' contact.pk %}"
+          hx-target="#contact-card-{{ contact.pk }}"
+          hx-swap="outerHTML"
+          class="flex gap-2">
+      <input type="text" name="reply_text" placeholder="Reply to {{ contact.first_name }}..."
+             class="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      <button type="submit"
+              class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-semibold shrink-0">
+        Reply
+      </button>
+    </form>
+
+    <form hx-post="{% url 'outreach:add_note' contact.pk %}"
+          hx-target="#contact-card-{{ contact.pk }}"
+          hx-swap="outerHTML"
+          class="flex gap-2">
+      <input type="text" name="note" placeholder="Add pastoral follow-up note..."
+             class="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-slate-500" />
+      <button type="submit"
+              class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs sm:text-sm font-semibold shrink-0">
+        Save Note
+      </button>
+    </form>
+  </div>
+
+  {% with notes=contact.notes.all %}
+    {% if notes %}
+      <div class="text-xs text-slate-600 space-y-1 bg-slate-50 rounded-xl p-2.5 border border-slate-100">
+        {% for n in notes|slice:":3" %}
+          <div><span class="font-semibold text-slate-700">{{ n.author_name }}:</span> {{ n.note }} <span class="text-slate-400">({{ n.created_at|date:"M d, H:i" }})</span></div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+</div>

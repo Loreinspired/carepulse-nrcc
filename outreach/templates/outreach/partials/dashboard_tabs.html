@@ -1,0 +1,35 @@
+<div class="flex flex-wrap gap-1.5" id="dashboard-tabs" {% if oob %}hx-swap-oob="true"{% endif %}>
+  <input type="hidden" id="active-tab-input" name="tab" value="{{ tab }}" />
+  <a href="?tab=queue{% if query %}&q={{ query|urlencode }}{% endif %}"
+     hx-get="{% url 'outreach:dashboard' %}?tab=queue"
+     hx-include="#dashboard-search"
+     hx-target="#dashboard-results"
+     hx-push-url="true"
+     class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition {% if tab == 'queue' %}bg-emerald-600 text-white{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">
+    1-Tap wa.me Queue
+  </a>
+  <a href="?tab=inbox{% if query %}&q={{ query|urlencode }}{% endif %}"
+     hx-get="{% url 'outreach:dashboard' %}?tab=inbox"
+     hx-include="#dashboard-search"
+     hx-target="#dashboard-results"
+     hx-push-url="true"
+     class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition {% if tab == 'inbox' %}bg-indigo-600 text-white{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">
+    Replied Inbox &amp; Voice Notes
+  </a>
+  <a href="?tab=rsvp{% if query %}&q={{ query|urlencode }}{% endif %}"
+     hx-get="{% url 'outreach:dashboard' %}?tab=rsvp"
+     hx-include="#dashboard-search"
+     hx-target="#dashboard-results"
+     hx-push-url="true"
+     class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition {% if tab == 'rsvp' %}bg-teal-600 text-white{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">
+    Sunday RSVPs
+  </a>
+  <a href="?tab=all{% if query %}&q={{ query|urlencode }}{% endif %}"
+     hx-get="{% url 'outreach:dashboard' %}?tab=all"
+     hx-include="#dashboard-search"
+     hx-target="#dashboard-results"
+     hx-push-url="true"
+     class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition {% if tab == 'all' %}bg-slate-800 text-white{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">
+    All Contacts
+  </a>
+</div>

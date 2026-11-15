@@ -1,0 +1,60 @@
+{% extends "outreach/base.html" %}
+
+{% block title %}Instant Field QR Handshake — CarePulse{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto space-y-4">
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6 text-center">
+    <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold mb-3">
+      Saved: {{ contact.full_name }} ({{ contact.phone_e164 }})
+    </div>
+
+    <h1 class="text-xl font-bold text-slate-900">Instant $0.00 Field Handshake</h1>
+    <p class="text-sm text-slate-600 mt-1">
+      Ask <strong>{{ contact.first_name }}</strong> to scan this QR code with their phone camera and tap
+      <strong>Send</strong> in WhatsApp. This opens a free 24-hour inbound conversation!
+    </p>
+
+    <div class="my-5 mx-auto w-56 h-56 p-3 bg-white rounded-2xl border-2 border-emerald-200 shadow-inner flex items-center justify-center">
+      {{ qr_svg|safe }}
+    </div>
+
+    <div class="bg-slate-50 rounded-xl p-3 text-left border border-slate-200 mb-4">
+      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+        Pre-filled Message to {{ CHURCH_SHORT_NAME }}
+      </div>
+      <p class="text-sm text-slate-700 italic">"{{ prefill_text }}"</p>
+    </div>
+
+    <div class="space-y-2.5">
+      <a href="{{ handshake_url }}" target="_blank" rel="noopener"
+         class="block w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-sm transition">
+        Open Inbound Handshake Link (wa.me)
+      </a>
+
+      <a href="{{ manual_wame_url }}" target="_blank" rel="noopener"
+         class="block w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium text-sm transition">
+        Or Message {{ contact.first_name }} Directly from Your Phone
+      </a>
+
+      <div class="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 text-xs text-slate-500">
+        <span>Personal RSVP Card:</span>
+        <a href="{{ rsvp_url }}" target="_blank" class="text-emerald-700 underline truncate max-w-[230px]">
+          {{ rsvp_url }}
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex gap-3">
+    <a href="{% url 'outreach:field_capture' %}"
+       class="flex-1 text-center py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm transition">
+      + Log Next Prospect
+    </a>
+    <a href="{% url 'outreach:dashboard' %}"
+       class="flex-1 text-center py-3 px-4 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-sm transition">
+      View Coordinator Queue
+    </a>
+  </div>
+</div>
+{% endblock %}

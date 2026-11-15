@@ -1,0 +1,27 @@
+{% if is_htmx %}
+  {% include "outreach/partials/dashboard_tabs.html" with oob=True %}
+{% endif %}
+<div class="space-y-4">
+  {% if contacts %}
+    {% for contact in contacts %}
+      {% include "outreach/partials/contact_card.html" %}
+    {% endfor %}
+  {% else %}
+    <div class="bg-white rounded-2xl border border-dashed border-slate-300 p-8 text-center">
+      <p class="text-slate-600 font-medium">No contacts match this view yet.</p>
+      <p class="text-sm text-slate-400 mt-1">
+        Log a soul in the field or upload an outreach CSV to populate your queue.
+      </p>
+      <div class="mt-4 flex justify-center gap-3">
+        <a href="{% url 'outreach:field_capture' %}"
+           class="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700">
+          + Field Capture
+        </a>
+        <a href="{% url 'outreach:bulk_import' %}"
+           class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200">
+          Import CSV
+        </a>
+      </div>
+    </div>
+  {% endif %}
+</div>

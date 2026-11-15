@@ -1,0 +1,51 @@
+{% extends "outreach/base.html" %}
+
+{% block title %}RSVP Confirmed — {{ CHURCH_SHORT_NAME }}{% endblock %}
+
+{% block navbar %}
+<header class="bg-emerald-900 text-white py-4 px-4 text-center shadow-sm">
+  <div class="max-w-md mx-auto">
+    <p class="text-xs uppercase tracking-widest text-emerald-200 font-semibold">God Bless You</p>
+    <h1 class="text-lg font-bold mt-0.5">{{ CHURCH_NAME }}</h1>
+  </div>
+</header>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto">
+  <div class="bg-white rounded-2xl shadow-sm border border-emerald-200 p-6 text-center space-y-4">
+    <div class="mx-auto w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl font-bold">
+      &#10003;
+    </div>
+
+    <h2 class="text-xl font-bold text-slate-900">Thank You, {{ contact.first_name }}!</h2>
+    <p class="text-sm text-slate-600">
+      Your response has been received by our care team:
+      <strong class="block text-emerald-800 mt-1">{{ contact.get_rsvp_status_display }}</strong>
+    </p>
+
+    {% if contact.rsvp_pickup_landmark %}
+      <p class="text-xs text-slate-500 bg-slate-50 rounded-xl p-2.5 border border-slate-200">
+        Pickup Landmark Noted: <strong>{{ contact.rsvp_pickup_landmark }}</strong>
+      </p>
+    {% endif %}
+
+    {% if contact.prayer_point %}
+      <div class="text-left bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-950">
+        <span class="font-semibold uppercase tracking-wide block mb-0.5">We Are Praying With You</span>
+        {{ contact.prayer_point }}
+      </div>
+    {% endif %}
+
+    <div class="text-xs text-slate-500 pt-2 border-t border-slate-100 space-y-1">
+      <div><strong>Service Time:</strong> {{ CHURCH_SUNDAY_TIME }}</div>
+      <div><strong>Location:</strong> {{ CHURCH_ADDRESS }}</div>
+    </div>
+
+    <a href="{{ church_wame_url }}" target="_blank" rel="noopener"
+       class="block w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm transition">
+      Chat With Us on WhatsApp
+    </a>
+  </div>
+</div>
+{% endblock %}
