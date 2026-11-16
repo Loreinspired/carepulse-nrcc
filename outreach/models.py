@@ -40,12 +40,22 @@ class OutreachContact(models.Model):
         INBOUND_QR = "INBOUND_QR", "Inbound WhatsApp / QR"
         ADMIN = "ADMIN", "Admin Entry"
 
+    class OutreachOutcome(models.TextChoices):
+        INVITED = "INVITED", "Invited to Church"
+        GOT_SAVED = "GOT_SAVED", "Got Saved"
+
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100, blank=True)
     phone_raw = models.CharField(max_length=32, blank=True)
     phone_e164 = models.CharField(max_length=20, unique=True, db_index=True)
     wa_id = models.CharField(max_length=20, blank=True, db_index=True)
 
+    outreach_outcome = models.CharField(
+        max_length=20,
+        choices=OutreachOutcome.choices,
+        default=OutreachOutcome.INVITED,
+        db_index=True,
+    )
     location_met = models.CharField(
         max_length=150,
         blank=True,

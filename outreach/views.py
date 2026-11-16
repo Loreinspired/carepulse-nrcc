@@ -111,6 +111,8 @@ def field_capture_view(request):
             # Give a 2-minute grace window for on-the-spot Field QR Handshake
             next_send = timezone.now() + timedelta(minutes=2)
 
+            outcome = cd.get("outreach_outcome") or OutreachContact.OutreachOutcome.INVITED
+
             contact, created = OutreachContact.objects.get_or_create(
                 phone_e164=phone_e164,
                 defaults={
@@ -118,6 +120,7 @@ def field_capture_view(request):
                     "last_name": cd.get("last_name", "").strip(),
                     "phone_raw": request.POST.get("phone", "").strip()[:32],
                     "wa_id": e164_to_wa_id(phone_e164),
+                    "outreach_outcome": outcome,
                     "location_met": cd.get("location_met", "").strip(),
                     "prayer_point": cd.get("prayer_point", "").strip(),
                     "soul_winner_name": soul_winner,
@@ -128,18 +131,30 @@ def field_capture_view(request):
                 },
             )
             if not created:
+                contact.outreach_outcome = outcome
                 if cd.get("location_met"):
                     contact.location_met = cd["location_met"].strip()
                 if cd.get("prayer_point"):
                     contact.prayer_point = cd["prayer_point"].strip()
                 if soul_winner:
                     contact.soul_winner_name = soul_winner
-                contact.save(update_fields=["location_met", "prayer_point", "soul_winner_name", "updated_at"])
+                contact.save(
+                    update_fields=[
+                        "outreach_outcome",
+                        "location_met",
+                        "prayer_point",
+                        "soul_winner_name",
+                        "updated_at",
+                    ]
+                )
 
             return redirect("outreach:field_qr_handshake", pk=contact.pk)
     else:
         form = FieldCaptureForm(
-            initial={"soul_winner_name": request.session.get("soul_winner_name", "")}
+            initial={
+                "soul_winner_name": request.session.get("soul_winner_name", ""),
+                "outreach_outcome": OutreachContact.OutreachOutcome.INVITED,
+            }
         )
 
     return render(request, "outreach/field_capture.html", {"form": form})
@@ -149,6 +164,14 @@ def field_capture_view(request):
 def field_qr_handshake_view(request, pk: int):
     """Instant Field QR / wa.me Inbound Handshake screen after logging a prospect."""
     contact = get_object_or_404(OutreachContact, pk=pk)
+    requested_outcome = request.GET.get("outcome")
+    if requested_outcome in {
+        OutreachContact.OutreachOutcome.INVITED,
+        OutreachContact.OutreachOutcome.GOT_SAVED,
+    } and requested_outcome != contact.outreach_outcome:
+        contact.outreach_outcome = requested_outcome
+        contact.save(update_fields=["outreach_outcome", "updated_at"])
+
     base_url = request.build_absolute_uri("/").rstrip("/")
     handshake_url, prefill_text = build_field_handshake_url(contact)
     qr_svg = generate_qr_svg(handshake_url)

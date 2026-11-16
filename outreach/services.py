@@ -241,9 +241,18 @@ def build_step_message_content(contact: OutreachContact, step: int) -> dict[str,
         prayer_snippet = f'\n\nWe are standing in faith with you on your prayer request: "{contact.prayer_point}".'
 
     if step == 1:
+        if contact.outreach_outcome == OutreachContact.OutreachOutcome.GOT_SAVED:
+            intro = (
+                f"Congratulations {name} on giving your life to Christ around {location}! "
+                f"Heaven rejoices with you, and we are thrilled to welcome you into the {church} family."
+            )
+        else:
+            intro = (
+                f"Peace and grace to you, {name}! It was such a blessing inviting you to church around {location}. "
+                f"We would love to welcome you into the {church} family."
+            )
         body = (
-            f"Peace and grace to you, {name}! It was such a blessing meeting you around {location}. "
-            f"Welcome to the {church} family.{prayer_snippet}\n\n"
+            f"{intro}{prayer_snippet}\n\n"
             f"Tap below or use your personal care card anytime:\n{rsvp_url}"
         )
         buttons = [
@@ -294,17 +303,27 @@ def build_manual_wame_url(contact: OutreachContact, step: int | None = None) -> 
     return build_wa_me_url(contact.phone_e164, content["body"])
 
 
-def build_field_handshake_url(contact: OutreachContact) -> tuple[str, str]:
+def build_field_handshake_url(
+    contact: OutreachContact,
+    outcome_override: str | None = None,
+) -> tuple[str, str]:
     """
     Build the Instant Field QR / wa.me Inbound Handshake link.
     When the prospect scans this QR code in the field, they send a pre-filled
     message TO the church WhatsApp number, opening a $0.00 24h window immediately.
     """
     location = contact.location_met or "Ado-Ekiti"
-    prefill = (
-        f"Hi {settings.CHURCH_SHORT_NAME}! I'm {contact.first_name} "
-        f"(met around {location}). Please connect with me and pray with me!"
-    )
+    outcome = outcome_override or contact.outreach_outcome
+    if outcome == OutreachContact.OutreachOutcome.GOT_SAVED:
+        prefill = (
+            f"Hi {settings.CHURCH_SHORT_NAME}! I'm {contact.first_name}, I just got saved "
+            f"around {location}. Please connect with me and pray with me!"
+        )
+    else:
+        prefill = (
+            f"Hi {settings.CHURCH_SHORT_NAME}! I'm {contact.first_name}, I was invited to church "
+            f"around {location}. Please connect with me and pray with me!"
+        )
     url = build_wa_me_url(settings.CHURCH_WHATSAPP_NUMBER, prefill)
     return url, prefill
 

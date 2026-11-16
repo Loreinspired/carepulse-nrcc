@@ -20,6 +20,15 @@
         <span class="text-xs font-mono px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
           {{ contact.phone_e164 }}
         </span>
+        {% if contact.outreach_outcome == 'GOT_SAVED' %}
+          <span class="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-semibold">
+            Got Saved
+          </span>
+        {% else %}
+          <span class="text-xs px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+            Invited to Church
+          </span>
+        {% endif %}
         {% if contact.location_met %}
           <span class="text-xs px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 font-medium">
             {{ contact.location_met }}

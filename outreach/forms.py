@@ -38,6 +38,12 @@ class FieldCaptureForm(forms.Form):
             }
         ),
     )
+    outreach_outcome = forms.ChoiceField(
+        choices=OutreachContact.OutreachOutcome.choices,
+        initial=OutreachContact.OutreachOutcome.INVITED,
+        required=False,
+        widget=forms.RadioSelect,
+    )
     location_met = forms.CharField(
         max_length=150,
         required=False,

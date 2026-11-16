@@ -35,6 +35,14 @@ class ViewsAndPollerTests(TestCase):
         self.assertEqual(handshake_resp.status_code, 200)
         self.assertContains(handshake_resp, "<svg")
         self.assertContains(handshake_resp, "https://wa.me/")
+        self.assertContains(handshake_resp, "I was invited to church around Fajuyi Park")
+
+        # Switching to GOT_SAVED updates the pre-filled handshake message
+        saved_resp = self.client.get(resp["Location"] + "?outcome=GOT_SAVED")
+        self.assertEqual(saved_resp.status_code, 200)
+        self.assertContains(saved_resp, "I just got saved around Fajuyi Park")
+        contact.refresh_from_db()
+        self.assertEqual(contact.outreach_outcome, OutreachContact.OutreachOutcome.GOT_SAVED)
 
     def test_coordinator_dashboard_and_manual_wame_step_progression(self):
         contact = OutreachContact.objects.create(
