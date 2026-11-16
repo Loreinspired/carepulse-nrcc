@@ -69,18 +69,24 @@
         <label class="block text-sm font-medium text-slate-700 mb-1.5">
           Outreach Outcome
         </label>
-        <div class="grid grid-cols-2 gap-2.5">
-          <label class="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-slate-300 bg-slate-50 has-[:checked]:border-emerald-600 has-[:checked]:bg-emerald-50 has-[:checked]:text-emerald-900 cursor-pointer text-sm font-semibold transition">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <label class="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-slate-300 bg-slate-50 has-[:checked]:border-emerald-600 has-[:checked]:bg-emerald-50 has-[:checked]:text-emerald-900 cursor-pointer text-xs sm:text-sm font-semibold transition text-center">
             <input type="radio" name="outreach_outcome" value="INVITED"
-                   {% if form.outreach_outcome.value != 'GOT_SAVED' %}checked{% endif %}
+                   {% if form.outreach_outcome.value != 'GOT_SAVED' and form.outreach_outcome.value != 'FILLED_HOLY_GHOST' %}checked{% endif %}
                    class="text-emerald-600 focus:ring-emerald-500" />
             <span>Invited to Church</span>
           </label>
-          <label class="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-slate-300 bg-slate-50 has-[:checked]:border-amber-600 has-[:checked]:bg-amber-50 has-[:checked]:text-amber-900 cursor-pointer text-sm font-semibold transition">
+          <label class="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-slate-300 bg-slate-50 has-[:checked]:border-amber-600 has-[:checked]:bg-amber-50 has-[:checked]:text-amber-900 cursor-pointer text-xs sm:text-sm font-semibold transition text-center">
             <input type="radio" name="outreach_outcome" value="GOT_SAVED"
                    {% if form.outreach_outcome.value == 'GOT_SAVED' %}checked{% endif %}
                    class="text-amber-600 focus:ring-amber-500" />
             <span>Got Saved</span>
+          </label>
+          <label class="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-slate-300 bg-slate-50 has-[:checked]:border-violet-600 has-[:checked]:bg-violet-50 has-[:checked]:text-violet-900 cursor-pointer text-xs sm:text-sm font-semibold transition text-center">
+            <input type="radio" name="outreach_outcome" value="FILLED_HOLY_GHOST"
+                   {% if form.outreach_outcome.value == 'FILLED_HOLY_GHOST' %}checked{% endif %}
+                   class="text-violet-600 focus:ring-violet-500" />
+            <span>Got Filled with the Holy Ghost</span>
           </label>
         </div>
       </div>
@@ -107,33 +113,6 @@
       </div>
 
       <div>
-        <label for="id_prayer_point" class="block text-sm font-medium text-slate-700 mb-1">
-          Prayer Point
-        </label>
-        <div class="flex flex-wrap gap-1.5 mb-2">
-          <button type="button" onclick="addPrayerChip('Job & Financial Breakthrough')"
-                  class="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-xs text-slate-600 border border-slate-200 transition">
-            + Job / Breakthrough
-          </button>
-          <button type="button" onclick="addPrayerChip('Divine Healing & Health')"
-                  class="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-xs text-slate-600 border border-slate-200 transition">
-            + Healing
-          </button>
-          <button type="button" onclick="addPrayerChip('Academic Success & Exams')"
-                  class="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-xs text-slate-600 border border-slate-200 transition">
-            + Academics
-          </button>
-          <button type="button" onclick="addPrayerChip('Peace & Direction')"
-                  class="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-xs text-slate-600 border border-slate-200 transition">
-            + Peace &amp; Direction
-          </button>
-        </div>
-        <textarea name="prayer_point" id="id_prayer_point" rows="2"
-                  placeholder="What can we pray with them about?"
-                  class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">{{ form.prayer_point.value|default:'' }}</textarea>
-      </div>
-
-      <div>
         <label for="id_soul_winner_name" class="block text-sm font-medium text-slate-700 mb-1">
           Soul-Winner Name
         </label>
@@ -150,19 +129,4 @@
     </form>
   </div>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-  function addPrayerChip(text) {
-    const field = document.getElementById('id_prayer_point');
-    if (!field) return;
-    const current = field.value.trim();
-    if (!current) {
-      field.value = text;
-    } else if (!current.toLowerCase().includes(text.toLowerCase())) {
-      field.value = current + '; ' + text;
-    }
-  }
-</script>
 {% endblock %}

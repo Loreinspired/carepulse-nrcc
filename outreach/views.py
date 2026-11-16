@@ -122,7 +122,6 @@ def field_capture_view(request):
                     "wa_id": e164_to_wa_id(phone_e164),
                     "outreach_outcome": outcome,
                     "location_met": cd.get("location_met", "").strip(),
-                    "prayer_point": cd.get("prayer_point", "").strip(),
                     "soul_winner_name": soul_winner,
                     "capture_source": OutreachContact.CaptureSource.FIELD_FORM,
                     "drip_step": 1,
@@ -134,15 +133,12 @@ def field_capture_view(request):
                 contact.outreach_outcome = outcome
                 if cd.get("location_met"):
                     contact.location_met = cd["location_met"].strip()
-                if cd.get("prayer_point"):
-                    contact.prayer_point = cd["prayer_point"].strip()
                 if soul_winner:
                     contact.soul_winner_name = soul_winner
                 contact.save(
                     update_fields=[
                         "outreach_outcome",
                         "location_met",
-                        "prayer_point",
                         "soul_winner_name",
                         "updated_at",
                     ]
@@ -168,6 +164,7 @@ def field_qr_handshake_view(request, pk: int):
     if requested_outcome in {
         OutreachContact.OutreachOutcome.INVITED,
         OutreachContact.OutreachOutcome.GOT_SAVED,
+        OutreachContact.OutreachOutcome.FILLED_HOLY_GHOST,
     } and requested_outcome != contact.outreach_outcome:
         contact.outreach_outcome = requested_outcome
         contact.save(update_fields=["outreach_outcome", "updated_at"])

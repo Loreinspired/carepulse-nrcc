@@ -43,6 +43,7 @@ class OutreachContact(models.Model):
     class OutreachOutcome(models.TextChoices):
         INVITED = "INVITED", "Invited to Church"
         GOT_SAVED = "GOT_SAVED", "Got Saved"
+        FILLED_HOLY_GHOST = "FILLED_HOLY_GHOST", "Got Filled with the Holy Ghost"
 
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100, blank=True)
@@ -51,7 +52,7 @@ class OutreachContact(models.Model):
     wa_id = models.CharField(max_length=20, blank=True, db_index=True)
 
     outreach_outcome = models.CharField(
-        max_length=20,
+        max_length=32,
         choices=OutreachOutcome.choices,
         default=OutreachOutcome.INVITED,
         db_index=True,

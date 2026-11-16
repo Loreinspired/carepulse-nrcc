@@ -15,14 +15,18 @@
       <strong>Send</strong> in WhatsApp. This opens a free 24-hour inbound conversation!
     </p>
 
-    <div class="mt-4 inline-flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
+    <div class="mt-4 inline-flex flex-wrap justify-center gap-1 rounded-xl bg-slate-100 p-1 text-xs font-semibold">
       <a href="?outcome=INVITED"
-         class="px-3 py-1.5 rounded-lg transition {% if contact.outreach_outcome != 'GOT_SAVED' %}bg-white text-emerald-700 shadow-xs{% else %}text-slate-600 hover:text-slate-900{% endif %}">
+         class="px-3 py-1.5 rounded-lg transition {% if contact.outreach_outcome != 'GOT_SAVED' and contact.outreach_outcome != 'FILLED_HOLY_GHOST' %}bg-white text-emerald-700 shadow-xs{% else %}text-slate-600 hover:text-slate-900{% endif %}">
         Invited to Church
       </a>
       <a href="?outcome=GOT_SAVED"
          class="px-3 py-1.5 rounded-lg transition {% if contact.outreach_outcome == 'GOT_SAVED' %}bg-white text-amber-700 shadow-xs{% else %}text-slate-600 hover:text-slate-900{% endif %}">
         Got Saved
+      </a>
+      <a href="?outcome=FILLED_HOLY_GHOST"
+         class="px-3 py-1.5 rounded-lg transition {% if contact.outreach_outcome == 'FILLED_HOLY_GHOST' %}bg-white text-violet-700 shadow-xs{% else %}text-slate-600 hover:text-slate-900{% endif %}">
+        Got Filled with the Holy Ghost
       </a>
     </div>
 

@@ -241,7 +241,12 @@ def build_step_message_content(contact: OutreachContact, step: int) -> dict[str,
         prayer_snippet = f'\n\nWe are standing in faith with you on your prayer request: "{contact.prayer_point}".'
 
     if step == 1:
-        if contact.outreach_outcome == OutreachContact.OutreachOutcome.GOT_SAVED:
+        if contact.outreach_outcome == OutreachContact.OutreachOutcome.FILLED_HOLY_GHOST:
+            intro = (
+                f"Hallelujah {name}! We rejoice with you on being filled with the Holy Ghost around {location}! "
+                f"We are thrilled to welcome you into the {church} family."
+            )
+        elif contact.outreach_outcome == OutreachContact.OutreachOutcome.GOT_SAVED:
             intro = (
                 f"Congratulations {name} on giving your life to Christ around {location}! "
                 f"Heaven rejoices with you, and we are thrilled to welcome you into the {church} family."
@@ -314,7 +319,12 @@ def build_field_handshake_url(
     """
     location = contact.location_met or "Ado-Ekiti"
     outcome = outcome_override or contact.outreach_outcome
-    if outcome == OutreachContact.OutreachOutcome.GOT_SAVED:
+    if outcome == OutreachContact.OutreachOutcome.FILLED_HOLY_GHOST:
+        prefill = (
+            f"Hi {settings.CHURCH_SHORT_NAME}! I'm {contact.first_name}, I got filled with the Holy Ghost "
+            f"around {location}. Please connect with me and pray with me!"
+        )
+    elif outcome == OutreachContact.OutreachOutcome.GOT_SAVED:
         prefill = (
             f"Hi {settings.CHURCH_SHORT_NAME}! I'm {contact.first_name}, I just got saved "
             f"around {location}. Please connect with me and pray with me!"

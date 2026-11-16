@@ -54,15 +54,6 @@ class FieldCaptureForm(forms.Form):
             }
         ),
     )
-    prayer_point = forms.CharField(
-        required=False,
-        widget=forms.Textarea(
-            attrs={
-                "rows": 2,
-                "placeholder": "What can we pray with them about?",
-            }
-        ),
-    )
     soul_winner_name = forms.CharField(
         max_length=120,
         required=False,

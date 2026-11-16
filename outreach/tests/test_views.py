@@ -16,14 +16,19 @@ class ViewsAndPollerTests(TestCase):
 
     @override_settings(WA_CLOUD_API_ENABLED=False)
     def test_field_capture_and_qr_handshake(self):
+        get_resp = self.client.get(reverse("outreach:field_capture"))
+        self.assertEqual(get_resp.status_code, 200)
+        self.assertNotContains(get_resp, "Prayer Point")
+        self.assertContains(get_resp, "Got Filled with the Holy Ghost")
+
         resp = self.client.post(
             reverse("outreach:field_capture"),
             {
                 "first_name": "Tunde",
                 "last_name": "Adebayo",
                 "phone": "0803 123 4567",
+                "outreach_outcome": OutreachContact.OutreachOutcome.INVITED,
                 "location_met": "Fajuyi Park",
-                "prayer_point": "Job breakthrough",
                 "soul_winner_name": "Sis. Funke",
             },
         )
@@ -43,6 +48,13 @@ class ViewsAndPollerTests(TestCase):
         self.assertContains(saved_resp, "I just got saved around Fajuyi Park")
         contact.refresh_from_db()
         self.assertEqual(contact.outreach_outcome, OutreachContact.OutreachOutcome.GOT_SAVED)
+
+        # Switching to FILLED_HOLY_GHOST updates the pre-filled handshake message
+        filled_resp = self.client.get(resp["Location"] + "?outcome=FILLED_HOLY_GHOST")
+        self.assertEqual(filled_resp.status_code, 200)
+        self.assertContains(filled_resp, "I got filled with the Holy Ghost around Fajuyi Park")
+        contact.refresh_from_db()
+        self.assertEqual(contact.outreach_outcome, OutreachContact.OutreachOutcome.FILLED_HOLY_GHOST)
 
     def test_coordinator_dashboard_and_manual_wame_step_progression(self):
         contact = OutreachContact.objects.create(

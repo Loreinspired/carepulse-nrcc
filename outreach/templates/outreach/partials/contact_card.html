@@ -20,7 +20,11 @@
         <span class="text-xs font-mono px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
           {{ contact.phone_e164 }}
         </span>
-        {% if contact.outreach_outcome == 'GOT_SAVED' %}
+        {% if contact.outreach_outcome == 'FILLED_HOLY_GHOST' %}
+          <span class="text-xs px-2.5 py-0.5 rounded-full bg-violet-100 text-violet-800 border border-violet-300 font-semibold">
+            Got Filled with the Holy Ghost
+          </span>
+        {% elif contact.outreach_outcome == 'GOT_SAVED' %}
           <span class="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-semibold">
             Got Saved
           </span>
