@@ -192,7 +192,7 @@ class WebhookAndRsvpTests(TestCase):
         self.assertTrue(msg.media_file.name.endswith(".ogg"))
         msg.media_file.delete(save=False)
 
-    def test_public_rsvp_card_syncs_attendance_and_prayer(self):
+    def test_public_rsvp_card_syncs_attendance_without_login(self):
         contact = OutreachContact.objects.create(
             first_name="Ayo",
             phone_e164="+2347034445566",
@@ -204,17 +204,16 @@ class WebhookAndRsvpTests(TestCase):
             {
                 "rsvp_status": OutreachContact.RsvpStatus.NEED_RIDE,
                 "rsvp_pickup_landmark": "EKSU Main Gate",
-                "prayer_point": "Final year project defense",
             },
         )
         self.assertEqual(resp.status_code, 200)
         contact.refresh_from_db()
         self.assertEqual(contact.rsvp_status, OutreachContact.RsvpStatus.NEED_RIDE)
         self.assertEqual(contact.rsvp_pickup_landmark, "EKSU Main Gate")
-        self.assertEqual(contact.prayer_point, "Final year project defense")
         self.assertTrue(
             WhatsAppMessage.objects.filter(
                 contact=contact,
                 channel=WhatsAppMessage.Channel.SYSTEM,
             ).exists()
         )
+        self.assertNotContains(self.client.get(url), "Prayer Request")

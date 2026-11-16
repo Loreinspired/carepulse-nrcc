@@ -76,7 +76,7 @@ class BulkImportForm(forms.Form):
     """CSV upload & hourly stagger configuration for up to 5,000+ contacts."""
 
     csv_file = forms.FileField(
-        help_text="UTF-8 CSV with columns: first_name, phone, location_met, prayer_point, soul_winner_name"
+        help_text="UTF-8 CSV with columns: first_name, last_name, phone, location_met, soul_winner_name"
     )
     max_per_hour = forms.IntegerField(
         min_value=1,
@@ -97,7 +97,7 @@ class BulkImportForm(forms.Form):
 
 
 class RsvpForm(forms.Form):
-    """Public 1-tap Sunday RSVP & prayer update micro-page form."""
+    """Public 1-tap Sunday RSVP micro-page form."""
 
     rsvp_status = forms.ChoiceField(
         choices=[
@@ -113,14 +113,5 @@ class RsvpForm(forms.Form):
         required=False,
         widget=forms.TextInput(
             attrs={"placeholder": "Closest bus stop (e.g., Fajuyi, EKSU Gate, Oja Oba)"}
-        ),
-    )
-    prayer_point = forms.CharField(
-        required=False,
-        widget=forms.Textarea(
-            attrs={
-                "rows": 3,
-                "placeholder": "Share or update your prayer request so our team can stand with you...",
-            }
         ),
     )

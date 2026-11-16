@@ -82,13 +82,6 @@
     </div>
   </div>
 
-  {% if contact.prayer_point %}
-    <div class="bg-amber-50/70 border border-amber-200/80 rounded-xl px-3.5 py-2.5 text-sm text-amber-950">
-      <span class="font-semibold text-xs uppercase tracking-wide text-amber-800 block mb-0.5">Prayer Request</span>
-      {{ contact.prayer_point }}
-    </div>
-  {% endif %}
-
   <!-- Mode B: 1-Tap wa.me Personalized Action Box -->
   {% if contact.drip_status != 'COMPLETED' and contact.drip_status != 'OPTED_OUT' %}
     <div class="bg-slate-50 rounded-xl border border-slate-200 p-3.5 space-y-2.5">
@@ -108,6 +101,8 @@
 
         <button type="button"
                 hx-post="{% url 'outreach:mark_manual_sent' contact.pk %}"
+                hx-vals='{"step": "{{ contact.ui_step }}"}'
+                hx-disabled-elt="this"
                 hx-target="#contact-card-{{ contact.pk }}"
                 hx-swap="outerHTML"
                 class="inline-flex items-center justify-center px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs sm:text-sm font-semibold transition">

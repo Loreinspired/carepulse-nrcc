@@ -31,6 +31,11 @@ services:
         value: "Sundays at 8:00 AM"
       - key: CHURCH_ADDRESS
         value: "Ado-Ekiti, Ekiti State, Nigeria"
+      # First admin account, created on deploy if missing (Render prompts for these on first setup).
+      - key: DJANGO_SUPERUSER_USERNAME
+        sync: false
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: carepulse-db

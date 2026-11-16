@@ -1,11 +1,15 @@
+import sys
 from decimal import Decimal
 from pathlib import Path
+
 import environ
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 env = environ.Env(
-    DJANGO_DEBUG=(bool, True),
+    # Safe by default: production unless DJANGO_DEBUG=True is set explicitly (e.g. in local .env)
+    DJANGO_DEBUG=(bool, False),
     WA_CLOUD_API_ENABLED=(bool, False),
     WA_MESSAGING_TIER_DAILY_LIMIT=(int, 250),
     WA_BATCH_SIZE=(int, 50),
@@ -17,12 +21,21 @@ env_file = BASE_DIR / ".env"
 if env_file.exists():
     environ.Env.read_env(env_file)
 
-SECRET_KEY = env(
-    "DJANGO_SECRET_KEY",
-    default="django-insecure-carepulse-ado-ekiti-local-dev-key-change-in-prod",
-)
 DEBUG = env("DJANGO_DEBUG")
-ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1", "0.0.0.0", "*"])
+TESTING = len(sys.argv) > 1 and sys.argv[1] == "test"
+IS_PRODUCTION = not DEBUG and not TESTING
+
+_DEV_SECRET_KEY = "django-insecure-carepulse-local-dev-key-never-use-in-production"
+SECRET_KEY = env("DJANGO_SECRET_KEY", default="").strip()
+if not SECRET_KEY or SECRET_KEY.startswith(("change-me", "django-insecure")):
+    if IS_PRODUCTION:
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY must be set to a long random value when DJANGO_DEBUG is False. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(50))\""
+        )
+    SECRET_KEY = _DEV_SECRET_KEY
+
+ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 SITE_BASE_URL = env("SITE_BASE_URL", default="http://localhost:8000").rstrip("/")
 CSRF_TRUSTED_ORIGINS = env.list(
     "CSRF_TRUSTED_ORIGINS",
@@ -41,8 +54,14 @@ for _host_env in ("RENDER_EXTERNAL_HOSTNAME", "RAILWAY_PUBLIC_DOMAIN", "KOYEB_PU
         if SITE_BASE_URL == "http://localhost:8000":
             SITE_BASE_URL = _origin
 
-if not DEBUG:
+if IS_PRODUCTION:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_SSL_REDIRECT = env.bool("DJANGO_SECURE_SSL_REDIRECT", default=True)
+    SECURE_REDIRECT_EXEMPT = [r"^healthz/$"]
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = env.int("DJANGO_SECURE_HSTS_SECONDS", default=3600)
+    SECURE_CONTENT_TYPE_NOSNIFF = True
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -56,12 +75,17 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Answers /healthz/ before host validation and the HTTPS redirect, so platform
+    # health probes (which may use an internal Host header or plain HTTP) still pass.
+    "outreach.middleware.HealthCheckMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Every page requires login unless the view is marked @login_not_required
+    "outreach.middleware.HtmxLoginRequiredMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -104,6 +128,10 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "outreach:field_capture"
+LOGOUT_REDIRECT_URL = "login"
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "Africa/Lagos"
@@ -158,7 +186,8 @@ WA_PHONE_NUMBER_ID = env("WA_PHONE_NUMBER_ID", default="")
 WA_WABA_ID = env("WA_WABA_ID", default="")
 WA_ACCESS_TOKEN = env("WA_ACCESS_TOKEN", default="")
 WA_APP_SECRET = env("WA_APP_SECRET", default="")
-WA_WEBHOOK_VERIFY_TOKEN = env("WA_WEBHOOK_VERIFY_TOKEN", default="carepulse-ado-ekiti-verify-token")
+# No default: an empty verify token rejects every Meta verification handshake.
+WA_WEBHOOK_VERIFY_TOKEN = env("WA_WEBHOOK_VERIFY_TOKEN", default="")
 
 WA_STEP1_UTILITY_TEMPLATE = env(
     "WA_STEP1_UTILITY_TEMPLATE",
@@ -172,6 +201,18 @@ WA_UTILITY_TEMPLATE_COST_USD = Decimal(
 WA_MESSAGING_TIER_DAILY_LIMIT = env("WA_MESSAGING_TIER_DAILY_LIMIT")
 WA_BATCH_SIZE = env("WA_BATCH_SIZE")
 WA_MAX_PER_HOUR = env("WA_MAX_PER_HOUR")
+
+if IS_PRODUCTION and WA_CLOUD_API_ENABLED:
+    _missing_wa = [
+        name
+        for name in ("WA_PHONE_NUMBER_ID", "WA_ACCESS_TOKEN", "WA_APP_SECRET", "WA_WEBHOOK_VERIFY_TOKEN")
+        if not globals()[name]
+    ]
+    if _missing_wa:
+        raise ImproperlyConfigured(
+            "WA_CLOUD_API_ENABLED=True in production requires: " + ", ".join(_missing_wa)
+            + ". WA_APP_SECRET is needed to verify that webhooks really come from Meta."
+        )
 
 LOGGING = {
     "version": 1,

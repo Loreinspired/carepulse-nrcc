@@ -15,20 +15,15 @@
       <strong>Send</strong> in WhatsApp. This opens a free 24-hour inbound conversation!
     </p>
 
-    <div class="mt-4 inline-flex flex-wrap justify-center gap-1 rounded-xl bg-slate-100 p-1 text-xs font-semibold">
-      <a href="?outcome=INVITED"
-         class="px-3 py-1.5 rounded-lg transition {% if contact.outreach_outcome != 'GOT_SAVED' and contact.outreach_outcome != 'FILLED_HOLY_GHOST' %}bg-white text-emerald-700 shadow-xs{% else %}text-slate-600 hover:text-slate-900{% endif %}">
-        Invited to Church
-      </a>
-      <a href="?outcome=GOT_SAVED"
-         class="px-3 py-1.5 rounded-lg transition {% if contact.outreach_outcome == 'GOT_SAVED' %}bg-white text-amber-700 shadow-xs{% else %}text-slate-600 hover:text-slate-900{% endif %}">
-        Got Saved
-      </a>
-      <a href="?outcome=FILLED_HOLY_GHOST"
-         class="px-3 py-1.5 rounded-lg transition {% if contact.outreach_outcome == 'FILLED_HOLY_GHOST' %}bg-white text-violet-700 shadow-xs{% else %}text-slate-600 hover:text-slate-900{% endif %}">
-        Got Filled with the Holy Ghost
-      </a>
-    </div>
+    <form method="post" class="mt-4 inline-flex flex-wrap justify-center gap-1 rounded-xl bg-slate-100 p-1 text-xs font-semibold">
+      {% csrf_token %}
+      {% for value, label in outcome_choices %}
+        <button type="submit" name="outcome" value="{{ value }}"
+                class="px-3 py-1.5 rounded-lg transition {% if contact.outreach_outcome == value %}bg-white shadow-xs {% if value == 'GOT_SAVED' %}text-amber-700{% elif value == 'FILLED_HOLY_GHOST' %}text-violet-700{% else %}text-emerald-700{% endif %}{% else %}text-slate-600 hover:text-slate-900{% endif %}">
+          {{ label }}
+        </button>
+      {% endfor %}
+    </form>
 
     <div class="my-5 mx-auto w-56 h-56 p-3 bg-white rounded-2xl border-2 border-emerald-200 shadow-inner flex items-center justify-center">
       {{ qr_svg|safe }}

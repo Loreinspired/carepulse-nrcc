@@ -30,13 +30,6 @@
       </p>
     {% endif %}
 
-    {% if contact.prayer_point %}
-      <div class="text-left bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-950">
-        <span class="font-semibold uppercase tracking-wide block mb-0.5">We Are Praying With You</span>
-        {{ contact.prayer_point }}
-      </div>
-    {% endif %}
-
     <div class="text-xs text-slate-500 pt-2 border-t border-slate-100 space-y-1">
       <div><strong>Service Time:</strong> {{ CHURCH_SUNDAY_TIME }}</div>
       <div><strong>Location:</strong> {{ CHURCH_ADDRESS }}</div>

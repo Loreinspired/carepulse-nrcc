@@ -2,6 +2,8 @@ import hashlib
 import hmac
 import logging
 import mimetypes
+import time
+from dataclasses import dataclass, field
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
@@ -9,7 +11,7 @@ from typing import Any
 import requests
 from django.conf import settings
 from django.core.files.base import ContentFile
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -39,17 +41,25 @@ _SHARED_SESSION: requests.Session | None = None
 def get_http_session() -> requests.Session:
     """
     Return a module-level requests.Session configured with persistent TLS
-    connection pooling (20 pools, max 50 connections) and automatic retries
-    for transient 429/5xx responses across 5,000+ sends.
+    connection pooling (20 pools, max 50 connections).
+
+    Retry policy is deliberately asymmetric:
+      - GET (media downloads) is idempotent, so it retries on 429/5xx and read errors.
+      - POST (sending a message) is NOT retried on 5xx or read timeouts, because Meta
+        may already have delivered the message; a blind retry would send it twice
+        (and charge twice for templates). Connection-establishment failures are still
+        retried for every method since the request never left this machine.
+        HTTP 429 on POST is handled explicitly in MetaWhatsAppClient.post_message.
     """
     global _SHARED_SESSION
     if _SHARED_SESSION is None:
         session = requests.Session()
         retry_strategy = Retry(
             total=3,
+            connect=3,
             backoff_factor=0.5,
             status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET", "POST"],
+            allowed_methods=["GET"],
             raise_on_status=False,
         )
         adapter = HTTPAdapter(
@@ -76,6 +86,10 @@ class MetaCloudAPIError(Exception):
 class MetaWhatsAppClient:
     """Direct Meta WhatsApp Cloud API client (v22.0+/v26.0, zero BSP markup)."""
 
+    # HTTP 429 means Meta rejected the request without processing it, so it is safe to retry.
+    max_429_retries = 2
+    max_retry_after_seconds = 5.0
+
     def __init__(self, session: requests.Session | None = None):
         self.session = session or get_http_session()
         self.api_version = settings.WA_API_VERSION
@@ -99,12 +113,23 @@ class MetaWhatsAppClient:
                 error_code="CONFIG_MISSING",
             )
 
-        resp = self.session.post(
-            self.messages_url,
-            json=payload,
-            headers=self._headers(),
-            timeout=(5, 15),
-        )
+        attempt = 0
+        while True:
+            try:
+                resp = self.session.post(
+                    self.messages_url,
+                    json=payload,
+                    headers=self._headers(),
+                    timeout=(5, 15),
+                )
+            except requests.RequestException as exc:
+                # Includes read timeouts: delivery is unknown, so surface it instead of retrying.
+                raise MetaCloudAPIError(f"Network error talking to Meta: {exc}", error_code="NETWORK_ERROR") from exc
+            if resp.status_code != 429 or attempt >= self.max_429_retries:
+                break
+            attempt += 1
+            time.sleep(self._retry_after_seconds(resp, attempt))
+
         try:
             data = resp.json()
         except ValueError:
@@ -117,6 +142,13 @@ class MetaWhatsAppClient:
             raise MetaCloudAPIError(msg, error_code=code, status_code=resp.status_code, payload=data)
 
         return data
+
+    def _retry_after_seconds(self, resp: requests.Response, attempt: int) -> float:
+        try:
+            delay = float(resp.headers.get("Retry-After", ""))
+        except ValueError:
+            delay = 0.5 * (2 ** (attempt - 1))
+        return max(0.0, min(delay, self.max_retry_after_seconds))
 
     def send_utility_template(
         self,
@@ -204,7 +236,10 @@ class MetaWhatsAppClient:
         meta_url = f"https://graph.facebook.com/{self.api_version}/{media_id}"
         headers = {"Authorization": f"Bearer {self.access_token}"}
 
-        info_resp = self.session.get(meta_url, headers=headers, timeout=(5, 15))
+        try:
+            info_resp = self.session.get(meta_url, headers=headers, timeout=(5, 15))
+        except requests.RequestException as exc:
+            raise MetaCloudAPIError(f"Network error fetching media {media_id}: {exc}", error_code="NETWORK_ERROR") from exc
         if info_resp.status_code >= 400:
             raise MetaCloudAPIError(
                 f"Failed to retrieve media metadata for {media_id}: {info_resp.text}",
@@ -216,7 +251,10 @@ class MetaWhatsAppClient:
         if not download_url:
             raise MetaCloudAPIError(f"Media response missing download URL for {media_id}")
 
-        bin_resp = self.session.get(download_url, headers=headers, timeout=(5, 30))
+        try:
+            bin_resp = self.session.get(download_url, headers=headers, timeout=(5, 30))
+        except requests.RequestException as exc:
+            raise MetaCloudAPIError(f"Network error downloading media {media_id}: {exc}", error_code="NETWORK_ERROR") from exc
         if bin_resp.status_code >= 400:
             raise MetaCloudAPIError(
                 f"Failed to download media bytes for {media_id}: HTTP {bin_resp.status_code}",
@@ -236,10 +274,6 @@ def build_step_message_content(contact: OutreachContact, step: int) -> dict[str,
     sunday_time = settings.CHURCH_SUNDAY_TIME
     rsvp_url = contact.get_rsvp_url()
 
-    prayer_snippet = ""
-    if contact.prayer_point:
-        prayer_snippet = f'\n\nWe are standing in faith with you on your prayer request: "{contact.prayer_point}".'
-
     if step == 1:
         if contact.outreach_outcome == OutreachContact.OutreachOutcome.FILLED_HOLY_GHOST:
             intro = (
@@ -257,7 +291,7 @@ def build_step_message_content(contact: OutreachContact, step: int) -> dict[str,
                 f"We would love to welcome you into the {church} family."
             )
         body = (
-            f"{intro}{prayer_snippet}\n\n"
+            f"{intro}\n\n"
             f"Tap below or use your personal care card anytime:\n{rsvp_url}"
         )
         buttons = [
@@ -268,8 +302,7 @@ def build_step_message_content(contact: OutreachContact, step: int) -> dict[str,
         header = f"{church} Care Team"
     elif step == 2:
         body = (
-            f"Hello {name}, checking in from {church}! We prayed specifically for you today"
-            f"{' regarding: ' + contact.prayer_point if contact.prayer_point else ''}.\n\n"
+            f"Hello {name}, checking in from {church}! We prayed specifically for you today.\n\n"
             f"Remember Jeremiah 29:11 — God's plans for you in Ado-Ekiti are for peace and a bright future. "
             f"How are things going today? Reply with a text or voice note anytime.\n\n"
             f"Care & RSVP link: {rsvp_url}"
@@ -338,230 +371,336 @@ def build_field_handshake_url(
     return url, prefill
 
 
+# How long a claimed contact / in-flight send is protected before it is considered stale.
+SEND_LEASE = timedelta(minutes=5)
+# Delay between chained steps: lands inside the 24h free window opened by the last inbound message.
+CHAIN_DELAY = timedelta(hours=22)
+
+TERMINAL_STATUSES = frozenset(
+    {
+        OutreachContact.DripStatus.OPTED_OUT,
+        OutreachContact.DripStatus.COMPLETED,
+        OutreachContact.DripStatus.INVALID_NUMBER,
+    }
+)
+# Statuses in which the automated Cloud API drip is still running.
+DRIP_RUNNING_STATUSES = frozenset(
+    {
+        OutreachContact.DripStatus.PENDING,
+        OutreachContact.DripStatus.AWAITING_CONFIRMATION,
+        OutreachContact.DripStatus.ACTIVE,
+    }
+)
+_INVALID_NUMBER_ERROR_CODES = {"131026", "131051"}
+_ZERO = Decimal("0.0000")
+
+
+def get_templates_sent_last_24h(now=None) -> int:
+    """Count business-initiated Cloud API utility templates sent (or in flight) in the rolling 24h window."""
+    now = now or timezone.now()
+    since = now - timedelta(hours=24)
+    return WhatsAppMessage.objects.filter(
+        direction=WhatsAppMessage.Direction.OUTBOUND,
+        channel=WhatsAppMessage.Channel.CLOUD_API,
+        message_type=WhatsAppMessage.MessageType.TEMPLATE,
+        created_at__gte=since,
+    ).exclude(delivery_status=WhatsAppMessage.DeliveryStatus.FAILED).count()
+
+
+def get_remaining_tier_budget(now=None) -> int:
+    """Return remaining Meta daily business-initiated messaging tier allowance."""
+    limit = int(settings.WA_MESSAGING_TIER_DAILY_LIMIT)
+    used = get_templates_sent_last_24h(now=now)
+    return max(0, limit - used)
+
+
+@dataclass
+class _SendPlan:
+    kind: str  # "interactive" | "template"
+    step: int
+    body: str
+    content: dict[str, Any] = field(default_factory=dict)
+    template_name: str = ""
+    cost: Decimal = _ZERO
+
+    @property
+    def message_type(self) -> str:
+        if self.kind == "template":
+            return WhatsAppMessage.MessageType.TEMPLATE
+        return WhatsAppMessage.MessageType.INTERACTIVE
+
+
 class CostGuardRouter:
     """
     Enforces the Hybrid Dual-Mode Cost-Guard state machine:
       1. If Cloud API disabled -> transition immediately to MANUAL_FALLBACK ($0.00).
       2. If inside 24h Customer Service Window -> send $0.00 Free-Form Interactive Buttons.
          Schedule Step 2 (or Step 3) for +22h to chain inside the same free 24h window.
-      3. If outside 24h window & Step 1 -> send $0.0067 Utility Confirmation Template.
+      3. If outside 24h window & Step 1 -> send $0.0067 Utility Confirmation Template
+         (subject to the daily Meta tier budget).
       4. If outside 24h window & Step 2 or 3 -> SILENT CONTACT CUTOFF -> MANUAL_FALLBACK ($0.00).
+
+    Duplicate-send safety (at-most-once delivery):
+      - Phase 1 (short transaction, row locked): decide, write the outbound message as QUEUED,
+        and extend the contact's lease so the poller won't claim it again mid-send.
+      - Phase 2 (no transaction, no lock): call Meta.
+      - Phase 3 (short transaction): record SENT/FAILED and advance the drip.
+      If a worker dies between phases 1 and 3, the next run finds the stale QUEUED message and
+      moves the contact to the manual queue instead of re-sending a message Meta may have delivered.
     """
 
     def __init__(self, client: MetaWhatsAppClient | None = None):
         self.client = client or MetaWhatsAppClient()
 
-    def execute_drip_step(self, contact: OutreachContact, now=None) -> dict[str, Any]:
+    def execute_drip_step(
+        self,
+        contact: OutreachContact | int,
+        now=None,
+        *,
+        lease_token=None,
+    ) -> dict[str, Any]:
+        """
+        Run one drip step for a contact (instance or primary key).
+
+        `lease_token` is the `next_send_at` value the poller stamped when it claimed the contact.
+        When given, the step only runs if the contact still carries that exact lease, so a
+        redelivered or duplicated Celery task becomes a no-op.
+        """
+        contact_id = contact.pk if isinstance(contact, OutreachContact) else int(contact)
         now = now or timezone.now()
 
-        if contact.is_opted_out or contact.drip_status in {
-            OutreachContact.DripStatus.OPTED_OUT,
-            OutreachContact.DripStatus.COMPLETED,
-            OutreachContact.DripStatus.INVALID_NUMBER,
-        }:
-            return {"action": "skipped", "reason": "terminal_or_opted_out", "cost_usd": Decimal("0.0000")}
+        # Phase 1: decide + reserve, under a row lock.
+        with transaction.atomic():
+            locked = (
+                OutreachContact.objects.select_for_update(skip_locked=True)
+                .filter(pk=contact_id)
+                .first()
+            )
+            if locked is None:
+                return _result("skipped", reason="not_found_or_locked")
+            if lease_token is not None and locked.next_send_at != lease_token:
+                return _result("skipped", reason="lease_superseded")
+
+            decision = self._decide(locked, now)
+            if isinstance(decision, dict):
+                return decision
+            plan = decision
+
+            attempt = WhatsAppMessage.objects.create(
+                contact=locked,
+                direction=WhatsAppMessage.Direction.OUTBOUND,
+                channel=WhatsAppMessage.Channel.CLOUD_API,
+                message_type=plan.message_type,
+                drip_step=plan.step,
+                template_name=plan.template_name,
+                body=plan.body,
+                delivery_status=WhatsAppMessage.DeliveryStatus.QUEUED,
+                estimated_cost_usd=plan.cost,
+            )
+            locked.next_send_at = now + SEND_LEASE
+            locked.save(update_fields=["next_send_at", "updated_at"])
+
+        # Phase 2: network call, with no transaction or lock held.
+        to_wa_id = locked.wa_id or e164_to_wa_id(locked.phone_e164)
+        try:
+            resp = self._send(plan, locked, to_wa_id)
+        except MetaCloudAPIError as exc:
+            return self._record_failure(contact_id, attempt, exc)
+
+        # Phase 3: record + advance.
+        return self._record_success(contact_id, attempt, plan, resp, now)
+
+    # ---- Phase 1 helpers -------------------------------------------------
+
+    def _decide(self, contact: OutreachContact, now) -> "_SendPlan | dict[str, Any]":
+        if contact.is_opted_out or contact.drip_status in TERMINAL_STATUSES:
+            return _result("skipped", reason="terminal_or_opted_out")
 
         # Mode B fallback when Cloud API is disabled (e.g., waiting for Meta verification)
         if not settings.WA_CLOUD_API_ENABLED:
-            contact.drip_status = OutreachContact.DripStatus.MANUAL_FALLBACK
-            contact.next_send_at = None
-            contact.save(update_fields=["drip_status", "next_send_at", "updated_at"])
-            return {"action": "manual_fallback", "reason": "cloud_api_disabled", "cost_usd": Decimal("0.0000")}
+            return self._move_to_manual(contact, "cloud_api_disabled")
 
-        to_wa_id = contact.wa_id or e164_to_wa_id(contact.phone_e164)
-        in_window = contact.is_in_service_window(now=now)
+        in_flight = (
+            contact.messages.filter(
+                direction=WhatsAppMessage.Direction.OUTBOUND,
+                channel=WhatsAppMessage.Channel.CLOUD_API,
+                delivery_status=WhatsAppMessage.DeliveryStatus.QUEUED,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if in_flight is not None:
+            if in_flight.created_at > timezone.now() - SEND_LEASE:
+                return _result("skipped", reason="send_in_flight")
+            in_flight.delivery_status = WhatsAppMessage.DeliveryStatus.FAILED
+            in_flight.error_code = "UNCONFIRMED"
+            in_flight.error_message = (
+                "Worker stopped before Meta confirmed this send. Not retried automatically, "
+                "because Meta may already have delivered it."
+            )
+            in_flight.save(update_fields=["delivery_status", "error_code", "error_message"])
+            logger.warning(
+                "Unconfirmed send for %s (message %s); moved to manual queue to avoid a duplicate.",
+                contact.phone_e164,
+                in_flight.pk,
+            )
+            return self._move_to_manual(contact, "unconfirmed_previous_attempt")
+
+        step = max(1, min(contact.drip_step, 3))
 
         # Case 1: Inside 24h Customer Service Window -> $0.00 Free-Form Interactive Message
-        if in_window:
-            return self._send_freeform_step(contact, to_wa_id, contact.drip_step, now)
+        if contact.is_in_service_window(now=now):
+            content = build_step_message_content(contact, step)
+            return _SendPlan(kind="interactive", step=step, body=content["body"], content=content)
 
         # Case 2: Outside 24h Window & Step 1 -> $0.0067 Utility Confirmation Template
         if contact.drip_step == 1:
-            return self._send_step1_utility_template(contact, to_wa_id, now)
+            if get_remaining_tier_budget(now=now) <= 0:
+                contact.next_send_at = now + timedelta(hours=1)
+                contact.save(update_fields=["next_send_at", "updated_at"])
+                logger.warning(
+                    "Daily Meta tier limit (%s) reached; deferred contact %s by 1h.",
+                    settings.WA_MESSAGING_TIER_DAILY_LIMIT,
+                    contact.phone_e164,
+                )
+                return _result("deferred_tier_limit")
+            template_name = settings.WA_STEP1_UTILITY_TEMPLATE
+            return _SendPlan(
+                kind="template",
+                step=1,
+                template_name=template_name,
+                cost=Decimal(settings.WA_UTILITY_TEMPLATE_COST_USD),
+                body=(
+                    f"Hi {contact.first_name}, thank you for connecting with {settings.CHURCH_SHORT_NAME} "
+                    f"around {contact.location_met or 'Ado-Ekiti'}. Tap Confirm & Connect to receive your follow-up."
+                ),
+            )
 
         # Case 3: Outside 24h Window & Step 2 or Step 3 -> Silent Contact Cutoff ($0.00)
+        return self._move_to_manual(contact, "silent_contact_cutoff")
+
+    @staticmethod
+    def _move_to_manual(contact: OutreachContact, reason: str) -> dict[str, Any]:
         contact.drip_status = OutreachContact.DripStatus.MANUAL_FALLBACK
         contact.next_send_at = None
         contact.save(update_fields=["drip_status", "next_send_at", "updated_at"])
-        return {
-            "action": "manual_fallback",
-            "reason": "silent_contact_cutoff",
-            "cost_usd": Decimal("0.0000"),
-        }
+        return _result("manual_fallback", reason=reason)
 
-    def _send_freeform_step(
-        self,
-        contact: OutreachContact,
-        to_wa_id: str,
-        step: int,
-        now,
-    ) -> dict[str, Any]:
-        content = build_step_message_content(contact, step)
-        try:
-            resp = self.client.send_interactive_buttons(
+    # ---- Phase 2 ----------------------------------------------------------
+
+    def _send(self, plan: _SendPlan, contact: OutreachContact, to_wa_id: str) -> dict[str, Any]:
+        if plan.kind == "template":
+            return self.client.send_utility_template(
                 to_wa_id=to_wa_id,
-                body_text=content["body"],
-                buttons=content["buttons"],
-                header_text=content["header"],
-                footer_text=content["footer"],
-            )
-        except MetaCloudAPIError as exc:
-            return self._handle_send_error(contact, exc, step, content["body"], Decimal("0.0000"))
-
-        wamid = _extract_wamid(resp)
-        WhatsAppMessage.objects.create(
-            contact=contact,
-            direction=WhatsAppMessage.Direction.OUTBOUND,
-            channel=WhatsAppMessage.Channel.CLOUD_API,
-            message_type=WhatsAppMessage.MessageType.INTERACTIVE,
-            drip_step=step,
-            wamid=wamid,
-            body=content["body"],
-            payload_json=resp,
-            delivery_status=WhatsAppMessage.DeliveryStatus.SENT,
-            estimated_cost_usd=Decimal("0.0000"),
-        )
-
-        contact.last_outbound_at = now
-        if step == 1:
-            contact.drip_step = 2
-            contact.drip_status = OutreachContact.DripStatus.ACTIVE
-            # 22-Hour Window Chaining: fire Step 2 inside the same free 24h window
-            contact.next_send_at = now + timedelta(hours=22)
-        elif step == 2:
-            contact.drip_step = 3
-            contact.drip_status = OutreachContact.DripStatus.ACTIVE
-            contact.next_send_at = now + timedelta(hours=22)
-        else:
-            contact.drip_step = 3
-            contact.drip_status = OutreachContact.DripStatus.COMPLETED
-            contact.next_send_at = None
-
-        contact.save(
-            update_fields=[
-                "drip_step",
-                "drip_status",
-                "next_send_at",
-                "last_outbound_at",
-                "updated_at",
-            ]
-        )
-        return {
-            "action": "sent_interactive",
-            "step": step,
-            "wamid": wamid,
-            "cost_usd": Decimal("0.0000"),
-        }
-
-    def _send_step1_utility_template(
-        self,
-        contact: OutreachContact,
-        to_wa_id: str,
-        now,
-    ) -> dict[str, Any]:
-        template_name = settings.WA_STEP1_UTILITY_TEMPLATE
-        template_cost = Decimal(settings.WA_UTILITY_TEMPLATE_COST_USD)
-        try:
-            resp = self.client.send_utility_template(
-                to_wa_id=to_wa_id,
-                template_name=template_name,
+                template_name=plan.template_name,
                 first_name=contact.first_name,
                 location_met=contact.location_met or "Ado-Ekiti",
             )
-        except MetaCloudAPIError as exc:
-            return self._handle_send_error(contact, exc, 1, f"[Template: {template_name}]", template_cost)
-
-        wamid = _extract_wamid(resp)
-        WhatsAppMessage.objects.create(
-            contact=contact,
-            direction=WhatsAppMessage.Direction.OUTBOUND,
-            channel=WhatsAppMessage.Channel.CLOUD_API,
-            message_type=WhatsAppMessage.MessageType.TEMPLATE,
-            drip_step=1,
-            wamid=wamid,
-            template_name=template_name,
-            body=(
-                f"Hi {contact.first_name}, thank you for connecting with {settings.CHURCH_SHORT_NAME} "
-                f"around {contact.location_met or 'Ado-Ekiti'}. Tap Confirm & Connect to receive your prayer follow-up."
-            ),
-            payload_json=resp,
-            delivery_status=WhatsAppMessage.DeliveryStatus.SENT,
-            estimated_cost_usd=template_cost,
+        return self.client.send_interactive_buttons(
+            to_wa_id=to_wa_id,
+            body_text=plan.content["body"],
+            buttons=plan.content["buttons"],
+            header_text=plan.content["header"],
+            footer_text=plan.content["footer"],
         )
 
-        # Move drip_step to 2 and schedule check at +24h:
-        # - If they confirm/reply before +24h, webhook immediately sends Step 1 welcome ($0.00) & chains Step 2 at +22h.
-        # - If they ignore for 24h, Step 2 hits Silent Contact Cutoff -> MANUAL_FALLBACK ($0.00).
-        contact.drip_step = 2
-        contact.drip_status = OutreachContact.DripStatus.AWAITING_CONFIRMATION
-        contact.last_outbound_at = now
-        contact.next_send_at = now + timedelta(hours=24)
-        contact.save(
-            update_fields=[
-                "drip_step",
-                "drip_status",
-                "next_send_at",
-                "last_outbound_at",
-                "updated_at",
-            ]
-        )
-        return {
-            "action": "sent_utility_template",
-            "step": 1,
-            "template_name": template_name,
-            "wamid": wamid,
-            "cost_usd": template_cost,
-        }
+    # ---- Phase 3 ----------------------------------------------------------
 
-    def _handle_send_error(
+    def _record_success(
         self,
-        contact: OutreachContact,
-        exc: MetaCloudAPIError,
-        step: int,
-        body: str,
-        attempted_cost: Decimal,
+        contact_id: int,
+        attempt: WhatsAppMessage,
+        plan: _SendPlan,
+        resp: dict[str, Any],
+        now,
     ) -> dict[str, Any]:
-        logger.warning(
-            "Meta Cloud API send error for %s (code=%s): %s",
-            contact.phone_e164,
-            exc.error_code,
-            exc,
-        )
-        WhatsAppMessage.objects.create(
-            contact=contact,
-            direction=WhatsAppMessage.Direction.OUTBOUND,
-            channel=WhatsAppMessage.Channel.CLOUD_API,
-            message_type=WhatsAppMessage.MessageType.TEXT,
-            drip_step=step,
-            body=body,
-            payload_json=exc.payload,
-            delivery_status=WhatsAppMessage.DeliveryStatus.FAILED,
-            error_code=exc.error_code,
-            error_message=str(exc),
-            estimated_cost_usd=Decimal("0.0000"),
-        )
+        wamid = _extract_wamid(resp)
+        with transaction.atomic():
+            attempt.wamid = wamid
+            attempt.payload_json = resp
+            attempt.delivery_status = WhatsAppMessage.DeliveryStatus.SENT
+            attempt.save(update_fields=["wamid", "payload_json", "delivery_status"])
 
-        if exc.error_code in {"131026", "131051"}:
-            contact.drip_status = OutreachContact.DripStatus.INVALID_NUMBER
-        else:
-            # 131049 (ecosystem limit), 130429 (rate limit), 131047, etc. -> Mode B fallback
-            contact.drip_status = OutreachContact.DripStatus.MANUAL_FALLBACK
+            contact = OutreachContact.objects.select_for_update().get(pk=contact_id)
+            contact.last_outbound_at = now
+            update_fields = ["last_outbound_at", "updated_at"]
+            # A STOP may have arrived while we were talking to Meta; never overwrite it.
+            if not contact.is_opted_out:
+                if plan.kind == "template":
+                    # If they confirm/reply before +24h, the webhook sends the free Step 1 welcome
+                    # and chains Step 2 at +22h. If they ignore it, Step 2 hits Silent Contact Cutoff.
+                    contact.drip_step = 2
+                    contact.drip_status = OutreachContact.DripStatus.AWAITING_CONFIRMATION
+                    contact.next_send_at = now + timedelta(hours=24)
+                elif plan.step < 3:
+                    contact.drip_step = plan.step + 1
+                    contact.drip_status = OutreachContact.DripStatus.ACTIVE
+                    contact.next_send_at = now + CHAIN_DELAY
+                else:
+                    contact.drip_step = 3
+                    contact.drip_status = OutreachContact.DripStatus.COMPLETED
+                    contact.next_send_at = None
+                update_fields += ["drip_step", "drip_status", "next_send_at"]
+            contact.save(update_fields=update_fields)
 
-        contact.next_send_at = None
-        contact.save(update_fields=["drip_status", "next_send_at", "updated_at"])
-        return {
-            "action": "fallback_on_error",
-            "error_code": exc.error_code,
-            "error": str(exc),
-            "cost_usd": Decimal("0.0000"),
-        }
+        if plan.kind == "template":
+            return _result(
+                "sent_utility_template",
+                cost=plan.cost,
+                step=1,
+                template_name=plan.template_name,
+                wamid=wamid,
+            )
+        return _result("sent_interactive", step=plan.step, wamid=wamid)
+
+    def _record_failure(self, contact_id: int, attempt: WhatsAppMessage, exc: MetaCloudAPIError) -> dict[str, Any]:
+        with transaction.atomic():
+            attempt.delivery_status = WhatsAppMessage.DeliveryStatus.FAILED
+            attempt.error_code = exc.error_code
+            attempt.error_message = str(exc)
+            attempt.payload_json = exc.payload
+            attempt.estimated_cost_usd = _ZERO
+            attempt.save(
+                update_fields=["delivery_status", "error_code", "error_message", "payload_json", "estimated_cost_usd"]
+            )
+
+            contact = OutreachContact.objects.select_for_update().get(pk=contact_id)
+            logger.warning(
+                "Meta Cloud API send error for %s (code=%s): %s",
+                contact.phone_e164,
+                exc.error_code,
+                exc,
+            )
+            if not contact.is_opted_out:
+                if exc.error_code in _INVALID_NUMBER_ERROR_CODES:
+                    contact.drip_status = OutreachContact.DripStatus.INVALID_NUMBER
+                else:
+                    # 131049 (ecosystem limit), 130429 (rate limit), NETWORK_ERROR, etc. -> Mode B fallback
+                    contact.drip_status = OutreachContact.DripStatus.MANUAL_FALLBACK
+                contact.next_send_at = None
+                contact.save(update_fields=["drip_status", "next_send_at", "updated_at"])
+
+        return _result("fallback_on_error", error_code=exc.error_code, error=str(exc))
+
+
+def _result(action: str, cost: Decimal = _ZERO, **extra: Any) -> dict[str, Any]:
+    return {"action": action, **extra, "cost_usd": cost}
 
 
 def verify_meta_webhook_signature(raw_body: bytes, signature_header: str) -> bool:
-    """Verify X-Hub-Signature-256 header against WA_APP_SECRET."""
+    """
+    Verify X-Hub-Signature-256 header against WA_APP_SECRET.
+
+    Fails closed: without an app secret, every webhook is rejected unless DEBUG is on
+    (local development only).
+    """
     app_secret = settings.WA_APP_SECRET
     if not app_secret:
-        return True
+        if settings.DEBUG:
+            logger.warning("WA_APP_SECRET not set; accepting unsigned webhook because DEBUG=True.")
+            return True
+        logger.error("Rejected webhook: WA_APP_SECRET is not configured.")
+        return False
     if not signature_header or not signature_header.startswith("sha256="):
         return False
     expected = hmac.new(
@@ -576,7 +715,7 @@ def verify_meta_webhook_signature(raw_body: bytes, signature_header: str) -> boo
 def process_webhook_payload(payload: dict[str, Any], client: MetaWhatsAppClient | None = None) -> dict[str, int]:
     """
     Process a Meta WhatsApp Cloud API webhook payload (inbound messages + delivery statuses).
-    Safe against duplicate deliveries via wamid uniqueness checks.
+    Safe against duplicate (and concurrent duplicate) deliveries via wamid uniqueness.
     """
     client = client or MetaWhatsAppClient()
     router = CostGuardRouter(client=client)
@@ -631,8 +770,10 @@ def process_webhook_payload(payload: dict[str, Any], client: MetaWhatsAppClient 
                     from_wa_id=from_wa_id,
                     profile_name=contacts_meta.get(from_wa_id, ""),
                 )
-                _handle_inbound_message(contact, msg_obj, router, client)
-                stats["messages_processed"] += 1
+                if _handle_inbound_message(contact, msg_obj, router, client):
+                    stats["messages_processed"] += 1
+                else:
+                    stats["duplicates_skipped"] += 1
 
     return stats
 
@@ -655,19 +796,28 @@ def _get_or_create_inbound_contact(from_wa_id: str, profile_name: str = "") -> O
             contact.save(update_fields=["wa_id", "updated_at"])
         return contact
 
-    first_name = (profile_name.split()[0] if profile_name else "") or "Friend"
-    last_name = " ".join(profile_name.split()[1:]) if profile_name and len(profile_name.split()) > 1 else ""
-    return OutreachContact.objects.create(
-        first_name=first_name[:100],
-        last_name=last_name[:100],
-        phone_raw=from_wa_id,
-        phone_e164=phone_e164,
-        wa_id=from_wa_id,
-        capture_source=OutreachContact.CaptureSource.INBOUND_QR,
-        drip_step=1,
-        drip_status=OutreachContact.DripStatus.ACTIVE,
-        last_inbound_at=timezone.now(),
-    )
+    name_parts = (profile_name or "").split()
+    first_name = name_parts[0] if name_parts else "Friend"
+    last_name = " ".join(name_parts[1:])
+    try:
+        with transaction.atomic():
+            return OutreachContact.objects.create(
+                first_name=first_name[:100],
+                last_name=last_name[:100],
+                phone_raw=from_wa_id,
+                phone_e164=phone_e164,
+                wa_id=from_wa_id,
+                capture_source=OutreachContact.CaptureSource.INBOUND_QR,
+                drip_step=1,
+                drip_status=OutreachContact.DripStatus.ACTIVE,
+                last_inbound_at=timezone.now(),
+            )
+    except IntegrityError:
+        # Another webhook for the same new number created the contact concurrently.
+        existing = OutreachContact.objects.filter(phone_e164=phone_e164).first()
+        if existing is None:
+            raise
+        return existing
 
 
 def _extract_inbound_text_and_type(msg_obj: dict[str, Any]) -> tuple[str, str, str, str]:
@@ -740,23 +890,29 @@ def _handle_inbound_message(
     msg_obj: dict[str, Any],
     router: CostGuardRouter,
     client: MetaWhatsAppClient,
-) -> None:
+) -> bool:
+    """Record and act on one inbound message. Returns False if it was a concurrent duplicate."""
     now = timezone.now()
     wamid = msg_obj.get("id")
     msg_type, body_text, button_id, media_id = _extract_inbound_text_and_type(msg_obj)
 
-    inbound_msg = WhatsAppMessage.objects.create(
-        contact=contact,
-        direction=WhatsAppMessage.Direction.INBOUND,
-        channel=WhatsAppMessage.Channel.CLOUD_API,
-        message_type=msg_type,
-        wamid=wamid,
-        body=body_text,
-        payload_json=msg_obj,
-        delivery_status=WhatsAppMessage.DeliveryStatus.RECEIVED,
-        estimated_cost_usd=Decimal("0.0000"),
-        media_id=media_id,
-    )
+    try:
+        with transaction.atomic():
+            inbound_msg = WhatsAppMessage.objects.create(
+                contact=contact,
+                direction=WhatsAppMessage.Direction.INBOUND,
+                channel=WhatsAppMessage.Channel.CLOUD_API,
+                message_type=msg_type,
+                wamid=wamid,
+                body=body_text,
+                payload_json=msg_obj,
+                delivery_status=WhatsAppMessage.DeliveryStatus.RECEIVED,
+                estimated_cost_usd=_ZERO,
+                media_id=media_id,
+            )
+    except IntegrityError:
+        # Same wamid delivered twice at once; the other worker handles it.
+        return False
 
     # Download audio / voice note locally so Coordinator Dashboard can play it
     if media_id and msg_type in {WhatsAppMessage.MessageType.AUDIO, WhatsAppMessage.MessageType.IMAGE}:
@@ -770,7 +926,7 @@ def _handle_inbound_message(
         contact.next_send_at = None
         contact.last_inbound_at = now
         contact.save(update_fields=["is_opted_out", "drip_status", "next_send_at", "last_inbound_at", "updated_at"])
-        return
+        return True
 
     # Open / refresh the 24-hour free Customer Service Window
     previous_status = contact.drip_status
@@ -784,45 +940,59 @@ def _handle_inbound_message(
         contact.rsvp_status = OutreachContact.RsvpStatus.NEED_RIDE
         contact.rsvp_updated_at = now
 
-    # 22-Hour Window Chaining:
-    # If prospect just confirmed Step 1 Utility Template (or scanned QR / replied on Step 1),
-    # immediately send the warm Step 1 pastoral welcome ($0.00) and schedule Step 2 for +22h.
-    if previous_status == OutreachContact.DripStatus.AWAITING_CONFIRMATION:
-        contact.drip_step = 1
+    cloud_enabled = settings.WA_CLOUD_API_ENABLED
+    if cloud_enabled and previous_status in DRIP_RUNNING_STATUSES and not contact.is_opted_out:
+        # The drip keeps running after a reply; the contact also shows in the Inbox tab
+        # because it now has an inbound message.
+        #
+        # Welcome is due when they confirmed the Step 1 template, or messaged us before
+        # Step 1 went out (e.g. scanned the Field QR Handshake right after capture).
+        welcome_due = (
+            previous_status == OutreachContact.DripStatus.AWAITING_CONFIRMATION
+            or contact.drip_step <= 1
+        )
         contact.drip_status = OutreachContact.DripStatus.ACTIVE
+        if welcome_due:
+            contact.drip_step = 1
+            # Due now. Sent immediately below; if that is skipped, the poller picks it up.
+            contact.next_send_at = now
+        else:
+            # Make sure the next step lands inside the window this message just opened.
+            latest_free_send = now + CHAIN_DELAY
+            if contact.next_send_at is None or contact.next_send_at > latest_free_send:
+                contact.next_send_at = latest_free_send
         contact.save(
             update_fields=[
                 "last_inbound_at",
                 "drip_step",
+                "drip_status",
+                "next_send_at",
+                "rsvp_status",
+                "rsvp_updated_at",
+                "updated_at",
+            ]
+        )
+        if welcome_due:
+            # 22-Hour Window Chaining: send the warm Step 1 welcome ($0.00) now; Step 2 follows at +22h.
+            router.execute_drip_step(contact, now=now)
+            return True
+    else:
+        # Not in an automated drip (manual queue, completed, Mode B): surface for a human.
+        contact.drip_status = OutreachContact.DripStatus.REPLIED
+        contact.save(
+            update_fields=[
+                "last_inbound_at",
                 "drip_status",
                 "rsvp_status",
                 "rsvp_updated_at",
                 "updated_at",
             ]
         )
-        if settings.WA_CLOUD_API_ENABLED:
-            router._send_freeform_step(contact, contact.wa_id or e164_to_wa_id(contact.phone_e164), 1, now)
-        else:
-            contact.drip_step = 2
-            contact.next_send_at = now + timedelta(hours=22)
-            contact.save(update_fields=["drip_step", "next_send_at", "updated_at"])
-        return
-
-    # Otherwise surface in the Coordinator Replied Inbox and keep window open
-    contact.drip_status = OutreachContact.DripStatus.REPLIED
-    contact.save(
-        update_fields=[
-            "last_inbound_at",
-            "drip_status",
-            "rsvp_status",
-            "rsvp_updated_at",
-            "updated_at",
-        ]
-    )
 
     # Auto-acknowledge RSVP button taps inside free 24h window when Cloud API is enabled
-    if settings.WA_CLOUD_API_ENABLED and button_id in {"rsvp_sunday", "need_ride", "prayer_update"}:
+    if cloud_enabled and button_id in {"rsvp_sunday", "need_ride", "prayer_update"}:
         _send_button_acknowledgement(contact, button_id, client)
+    return True
 
 
 def _send_button_acknowledgement(contact: OutreachContact, button_id: str, client: MetaWhatsAppClient) -> None:
@@ -840,8 +1010,8 @@ def _send_button_acknowledgement(contact: OutreachContact, button_id: str, clien
         )
     else:
         ack_text = (
-            f"We are ready to pray with you, {contact.first_name}! Reply here with your prayer request "
-            f"(text or voice note) or update it at: {rsvp_url}"
+            f"We are ready to pray with you, {contact.first_name}! Reply here "
+            f"(text or voice note) and our care team will stand with you."
         )
 
     try:

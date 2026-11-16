@@ -15,8 +15,10 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p /app/media /app/staticfiles && python manage.py collectstatic --noinput
+# collectstatic needs settings to load; this throwaway key is only used during the image build.
+RUN mkdir -p /app/media /app/staticfiles \
+    && DJANGO_SECRET_KEY=image-build-only-not-used-at-runtime python manage.py collectstatic --noinput
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 60"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && python manage.py ensure_superuser && gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 60"]

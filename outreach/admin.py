@@ -37,7 +37,7 @@ class OutreachContactAdmin(admin.ModelAdmin):
         "next_send_at",
     )
     list_filter = ("drip_status", "drip_step", "rsvp_status", "capture_source", "is_opted_out")
-    search_fields = ("first_name", "last_name", "phone_e164", "location_met", "prayer_point")
+    search_fields = ("first_name", "last_name", "phone_e164", "location_met")
     readonly_fields = ("rsvp_token", "created_at", "updated_at")
     inlines = [WhatsAppMessageInline, FollowUpNoteInline]
 

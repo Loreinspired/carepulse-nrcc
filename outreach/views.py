@@ -1,10 +1,13 @@
 import csv
+import hmac
 import json
 import logging
 from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
+from django.contrib.auth.decorators import login_not_required
+from django.db import transaction
 from django.db.models import Q, Sum
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -43,6 +46,13 @@ def _enrich_contact_for_ui(contact: OutreachContact, base_url: str) -> OutreachC
     return contact
 
 
+def _inbox_filter() -> Q:
+    """Contacts who have messaged us (the drip may still be running for them)."""
+    return Q(drip_status=OutreachContact.DripStatus.REPLIED) | Q(
+        messages__direction=WhatsAppMessage.Direction.INBOUND
+    )
+
+
 def _build_dashboard_metrics() -> dict:
     now = timezone.now()
     window_cutoff = now - timedelta(hours=24)
@@ -62,10 +72,12 @@ def _build_dashboard_metrics() -> dict:
         drip_status__in=manual_statuses,
     ).count()
 
-    replied_count = OutreachContact.objects.filter(
-        is_opted_out=False,
-        drip_status=OutreachContact.DripStatus.REPLIED,
-    ).count()
+    replied_count = (
+        OutreachContact.objects.filter(is_opted_out=False)
+        .filter(_inbox_filter())
+        .distinct()
+        .count()
+    )
 
     rsvp_confirmed_count = OutreachContact.objects.filter(
         rsvp_status__in=[
@@ -144,7 +156,7 @@ def field_capture_view(request):
                     ]
                 )
 
-            return redirect("outreach:field_qr_handshake", pk=contact.pk)
+            return redirect("outreach:field_qr_handshake", rsvp_token=contact.rsvp_token)
     else:
         form = FieldCaptureForm(
             initial={
@@ -156,18 +168,21 @@ def field_capture_view(request):
     return render(request, "outreach/field_capture.html", {"form": form})
 
 
-@require_GET
-def field_qr_handshake_view(request, pk: int):
-    """Instant Field QR / wa.me Inbound Handshake screen after logging a prospect."""
-    contact = get_object_or_404(OutreachContact, pk=pk)
-    requested_outcome = request.GET.get("outcome")
-    if requested_outcome in {
-        OutreachContact.OutreachOutcome.INVITED,
-        OutreachContact.OutreachOutcome.GOT_SAVED,
-        OutreachContact.OutreachOutcome.FILLED_HOLY_GHOST,
-    } and requested_outcome != contact.outreach_outcome:
-        contact.outreach_outcome = requested_outcome
-        contact.save(update_fields=["outreach_outcome", "updated_at"])
+@require_http_methods(["GET", "POST"])
+def field_qr_handshake_view(request, rsvp_token: str):
+    """
+    Instant Field QR / wa.me Inbound Handshake screen after logging a prospect.
+
+    Addressed by the contact's unguessable rsvp_token (not the sequential id), and the
+    outcome switcher changes data, so it is a POST (CSRF-protected), never a GET.
+    """
+    contact = get_object_or_404(OutreachContact, rsvp_token=rsvp_token)
+    if request.method == "POST":
+        requested_outcome = request.POST.get("outcome")
+        if requested_outcome in OutreachContact.OutreachOutcome.values and requested_outcome != contact.outreach_outcome:
+            contact.outreach_outcome = requested_outcome
+            contact.save(update_fields=["outreach_outcome", "updated_at"])
+        return redirect("outreach:field_qr_handshake", rsvp_token=contact.rsvp_token)
 
     base_url = request.build_absolute_uri("/").rstrip("/")
     handshake_url, prefill_text = build_field_handshake_url(contact)
@@ -183,6 +198,7 @@ def field_qr_handshake_view(request, pk: int):
             "qr_svg": qr_svg,
             "rsvp_url": contact.get_rsvp_url(base_url=base_url),
             "manual_wame_url": build_manual_wame_url(contact, step=1),
+            "outcome_choices": OutreachContact.OutreachOutcome.choices,
         },
     )
 
@@ -202,10 +218,7 @@ def dashboard_view(request):
             queue_statuses.append(OutreachContact.DripStatus.PENDING)
         qs = qs.filter(is_opted_out=False, drip_status__in=queue_statuses)
     elif tab == "inbox":
-        qs = qs.filter(
-            Q(drip_status=OutreachContact.DripStatus.REPLIED)
-            | Q(messages__direction=WhatsAppMessage.Direction.INBOUND)
-        ).distinct()
+        qs = qs.filter(_inbox_filter()).distinct()
     elif tab == "rsvp":
         qs = qs.exclude(rsvp_status=OutreachContact.RsvpStatus.NONE)
 
@@ -215,7 +228,6 @@ def dashboard_view(request):
             | Q(last_name__icontains=query)
             | Q(phone_e164__icontains=query)
             | Q(location_met__icontains=query)
-            | Q(prayer_point__icontains=query)
         )
 
     contacts = [_enrich_contact_for_ui(c, base_url) for c in qs[:100]]
@@ -236,10 +248,46 @@ def dashboard_view(request):
 
 @require_POST
 def mark_manual_sent_view(request, pk: int):
-    """HTMX endpoint: record a Mode B 1-Tap wa.me send and advance drip step at $0.00."""
-    contact = get_object_or_404(OutreachContact, pk=pk)
+    """
+    HTMX endpoint: record a Mode B 1-Tap wa.me send and advance drip step at $0.00.
+
+    The button posts the step it was showing. If the contact has already moved past it
+    (double tap, two volunteers on the same contact), nothing is logged twice.
+    """
+    base_url = request.build_absolute_uri("/").rstrip("/")
+    try:
+        expected_step = int(request.POST.get("step", ""))
+    except ValueError:
+        expected_step = None
+
+    with transaction.atomic():
+        contact = get_object_or_404(OutreachContact.objects.select_for_update(), pk=pk)
+        step = max(1, min(contact.drip_step, 3))
+        already_done = contact.drip_status == OutreachContact.DripStatus.COMPLETED
+        if expected_step is None or expected_step != step or already_done:
+            feedback = (
+                "Please refresh: this card was out of date."
+                if expected_step is None
+                else f"Step {expected_step} was already logged — nothing recorded twice."
+            )
+            _enrich_contact_for_ui(contact, base_url)
+            return render(
+                request,
+                "outreach/partials/contact_card.html",
+                {"contact": contact, "feedback": feedback},
+            )
+        _log_manual_step(contact, step)
+
+    _enrich_contact_for_ui(contact, base_url)
+    return render(
+        request,
+        "outreach/partials/contact_card.html",
+        {"contact": contact, "feedback": f"Step {step} logged via 1-Tap wa.me ($0.00)!"},
+    )
+
+
+def _log_manual_step(contact: OutreachContact, step: int) -> None:
     now = timezone.now()
-    step = max(1, min(contact.drip_step, 3))
     content = build_step_message_content(contact, step)
 
     WhatsAppMessage.objects.create(
@@ -271,14 +319,6 @@ def mark_manual_sent_view(request, pk: int):
             "next_send_at",
             "updated_at",
         ]
-    )
-
-    base_url = request.build_absolute_uri("/").rstrip("/")
-    _enrich_contact_for_ui(contact, base_url)
-    return render(
-        request,
-        "outreach/partials/contact_card.html",
-        {"contact": contact, "feedback": f"Step {step} logged via 1-Tap wa.me ($0.00)!"},
     )
 
 
@@ -366,6 +406,7 @@ def trigger_step_now_view(request, pk: int):
     """HTMX endpoint: run CostGuardRouter immediately for a contact."""
     contact = get_object_or_404(OutreachContact, pk=pk)
     result = CostGuardRouter().execute_drip_step(contact)
+    contact.refresh_from_db()
     base_url = request.build_absolute_uri("/").rstrip("/")
     _enrich_contact_for_ui(contact, base_url)
     return render(
@@ -411,13 +452,14 @@ def sample_csv_view(request):
     response = HttpResponse(content_type="text/csv")
     response["Content-Disposition"] = 'attachment; filename="carepulse_ado_ekiti_sample.csv"'
     writer = csv.writer(response)
-    writer.writerow(["first_name", "last_name", "phone", "location_met", "prayer_point", "soul_winner_name"])
-    writer.writerow(["Tunde", "Adebayo", "08031234567", "Fajuyi Park", "Career breakthrough", "Sis. Funke"])
-    writer.writerow(["Bisi", "Olatunji", "+2348149876543", "EKSU Gate", "Final year exams", "Bro. Seun"])
-    writer.writerow(["Chinedu", "Okafor", "09051122334", "Oja Oba", "Family peace & health", "Pastor Segun"])
+    writer.writerow(["first_name", "last_name", "phone", "location_met", "soul_winner_name"])
+    writer.writerow(["Tunde", "Adebayo", "08031234567", "Fajuyi Park", "Sis. Funke"])
+    writer.writerow(["Bisi", "Olatunji", "+2348149876543", "EKSU Gate", "Bro. Seun"])
+    writer.writerow(["Chinedu", "Okafor", "09051122334", "Oja Oba", "Pastor Segun"])
     return response
 
 
+@login_not_required
 @require_http_methods(["GET", "POST"])
 def rsvp_card_view(request, rsvp_token: str):
     """Public 1-Tap Sunday RSVP & Prayer Update micro-page (Mode A + Mode B)."""
@@ -429,14 +471,11 @@ def rsvp_card_view(request, rsvp_token: str):
             cd = form.cleaned_data
             contact.rsvp_status = cd["rsvp_status"]
             contact.rsvp_pickup_landmark = cd.get("rsvp_pickup_landmark", "").strip()
-            if cd.get("prayer_point", "").strip():
-                contact.prayer_point = cd["prayer_point"].strip()
             contact.rsvp_updated_at = timezone.now()
             contact.save(
                 update_fields=[
                     "rsvp_status",
                     "rsvp_pickup_landmark",
-                    "prayer_point",
                     "rsvp_updated_at",
                     "updated_at",
                 ]
@@ -450,7 +489,6 @@ def rsvp_card_view(request, rsvp_token: str):
                 body=(
                     f"[Web RSVP] {contact.get_rsvp_status_display()}"
                     + (f" | Pickup: {contact.rsvp_pickup_landmark}" if contact.rsvp_pickup_landmark else "")
-                    + (f" | Prayer: {contact.prayer_point}" if contact.prayer_point else "")
                 ),
                 delivery_status=WhatsAppMessage.DeliveryStatus.RECEIVED,
                 estimated_cost_usd=Decimal("0.0000"),
@@ -475,13 +513,13 @@ def rsvp_card_view(request, rsvp_token: str):
                     else OutreachContact.RsvpStatus.ATTENDING
                 ),
                 "rsvp_pickup_landmark": contact.rsvp_pickup_landmark,
-                "prayer_point": contact.prayer_point,
             }
         )
 
     return render(request, "outreach/rsvp_card.html", {"contact": contact, "form": form})
 
 
+@login_not_required
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def whatsapp_webhook_view(request):
@@ -492,9 +530,10 @@ def whatsapp_webhook_view(request):
     """
     if request.method == "GET":
         mode = request.GET.get("hub.mode")
-        token = request.GET.get("hub.verify_token")
+        token = request.GET.get("hub.verify_token") or ""
         challenge = request.GET.get("hub.challenge", "")
-        if mode == "subscribe" and token == settings.WA_WEBHOOK_VERIFY_TOKEN:
+        expected = settings.WA_WEBHOOK_VERIFY_TOKEN or ""
+        if mode == "subscribe" and expected and hmac.compare_digest(token, expected):
             return HttpResponse(challenge, content_type="text/plain", status=200)
         return HttpResponseForbidden("Webhook verification failed.")
 
@@ -526,11 +565,12 @@ def toggle_opt_out_view(request, pk: int):
     contact = get_object_or_404(OutreachContact, pk=pk)
     if contact.is_opted_out:
         contact.is_opted_out = False
-        contact.drip_status = (
-            OutreachContact.DripStatus.PENDING
-            if settings.WA_CLOUD_API_ENABLED
-            else OutreachContact.DripStatus.MANUAL_FALLBACK
-        )
+        if settings.WA_CLOUD_API_ENABLED:
+            contact.drip_status = OutreachContact.DripStatus.PENDING
+            # The poller only claims contacts with a due next_send_at.
+            contact.next_send_at = timezone.now()
+        else:
+            contact.drip_status = OutreachContact.DripStatus.MANUAL_FALLBACK
         feedback = "Contact re-enabled for outreach follow-up."
     else:
         contact.is_opted_out = True
@@ -562,7 +602,6 @@ def export_rsvps_csv_view(request):
             "Location Met",
             "RSVP Status",
             "Pickup Landmark",
-            "Prayer Point",
             "Soul Winner",
             "Updated At",
         ]
@@ -579,7 +618,6 @@ def export_rsvps_csv_view(request):
                 c.location_met,
                 c.get_rsvp_status_display(),
                 c.rsvp_pickup_landmark,
-                c.prayer_point,
                 c.soul_winner_name,
                 c.rsvp_updated_at.isoformat() if c.rsvp_updated_at else "",
             ]
@@ -587,6 +625,7 @@ def export_rsvps_csv_view(request):
     return response
 
 
+@login_not_required
 @require_GET
 def healthcheck_view(request):
     """Healthcheck endpoint for Docker/load-balancer readiness."""

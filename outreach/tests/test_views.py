@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -13,6 +14,8 @@ from outreach.tasks import poll_due_drip_contacts
 class ViewsAndPollerTests(TestCase):
     def setUp(self):
         self.client = Client()
+        self.user = get_user_model().objects.create_user(username="coordinator", password="pw-for-tests-123")
+        self.client.force_login(self.user)
 
     @override_settings(WA_CLOUD_API_ENABLED=False)
     def test_field_capture_and_qr_handshake(self):
@@ -41,16 +44,23 @@ class ViewsAndPollerTests(TestCase):
         self.assertContains(handshake_resp, "<svg")
         self.assertContains(handshake_resp, "https://wa.me/")
         self.assertContains(handshake_resp, "I was invited to church around Fajuyi Park")
+        # Addressed by the unguessable token, not the sequential id
+        self.assertEqual(resp["Location"], reverse("outreach:field_qr_handshake", args=[contact.rsvp_token]))
 
-        # Switching to GOT_SAVED updates the pre-filled handshake message
-        saved_resp = self.client.get(resp["Location"] + "?outcome=GOT_SAVED")
+        # A GET with ?outcome= must not change data any more
+        self.client.get(resp["Location"] + "?outcome=GOT_SAVED")
+        contact.refresh_from_db()
+        self.assertEqual(contact.outreach_outcome, OutreachContact.OutreachOutcome.INVITED)
+
+        # Switching to GOT_SAVED (POST) updates the pre-filled handshake message
+        saved_resp = self.client.post(resp["Location"], {"outcome": "GOT_SAVED"}, follow=True)
         self.assertEqual(saved_resp.status_code, 200)
         self.assertContains(saved_resp, "I just got saved around Fajuyi Park")
         contact.refresh_from_db()
         self.assertEqual(contact.outreach_outcome, OutreachContact.OutreachOutcome.GOT_SAVED)
 
         # Switching to FILLED_HOLY_GHOST updates the pre-filled handshake message
-        filled_resp = self.client.get(resp["Location"] + "?outcome=FILLED_HOLY_GHOST")
+        filled_resp = self.client.post(resp["Location"], {"outcome": "FILLED_HOLY_GHOST"}, follow=True)
         self.assertEqual(filled_resp.status_code, 200)
         self.assertContains(filled_resp, "I got filled with the Holy Ghost around Fajuyi Park")
         contact.refresh_from_db()
@@ -73,13 +83,13 @@ class ViewsAndPollerTests(TestCase):
         # Mark Steps 1, 2, 3 via HTMX
         mark_url = reverse("outreach:mark_manual_sent", args=[contact.pk])
         for expected_step in (2, 3):
-            r = self.client.post(mark_url, HTTP_HX_REQUEST="true")
+            r = self.client.post(mark_url, {"step": expected_step - 1}, HTTP_HX_REQUEST="true")
             self.assertEqual(r.status_code, 200)
             contact.refresh_from_db()
             self.assertEqual(contact.drip_step, expected_step)
             self.assertEqual(contact.drip_status, OutreachContact.DripStatus.MANUAL_FALLBACK)
 
-        r3 = self.client.post(mark_url, HTTP_HX_REQUEST="true")
+        r3 = self.client.post(mark_url, {"step": 3}, HTTP_HX_REQUEST="true")
         self.assertEqual(r3.status_code, 200)
         contact.refresh_from_db()
         self.assertEqual(contact.drip_status, OutreachContact.DripStatus.COMPLETED)
@@ -129,6 +139,7 @@ class ViewsAndPollerTests(TestCase):
             res = poll_due_drip_contacts()
 
         self.assertEqual(res["claimed"], 1)
-        mock_delay.assert_called_once_with(due.pk)
         due.refresh_from_db()
         self.assertGreater(due.next_send_at, now)
+        # The task receives the exact lease it must still hold when it runs
+        mock_delay.assert_called_once_with(due.pk, due.next_send_at.isoformat())

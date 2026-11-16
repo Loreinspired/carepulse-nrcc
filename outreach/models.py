@@ -62,7 +62,6 @@ class OutreachContact(models.Model):
         blank=True,
         help_text="E.g., Fajuyi Park, Oja Oba, EKSU Gate, ABUAD Axis",
     )
-    prayer_point = models.TextField(blank=True)
     soul_winner_name = models.CharField(max_length=120, blank=True)
     capture_source = models.CharField(
         max_length=24,
@@ -85,7 +84,7 @@ class OutreachContact(models.Model):
     manual_sent_step = models.PositiveSmallIntegerField(default=0)
     assigned_volunteer = models.CharField(max_length=120, blank=True)
 
-    # Mode B: Web RSVP & Prayer Sync
+    # Mode B: Web RSVP Sync
     rsvp_token = models.CharField(
         max_length=32,
         unique=True,

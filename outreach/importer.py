@@ -38,7 +38,6 @@ _COLUMN_ALIASES = {
     "last_name": ("last_name", "lastname", "last name", "surname"),
     "phone": ("phone", "phone_number", "phonenumber", "phone number", "whatsapp", "mobile", "tel", "telephone"),
     "location_met": ("location_met", "location", "area", "zone", "place", "place_met", "axis"),
-    "prayer_point": ("prayer_point", "prayer", "prayer_request", "prayer request", "request", "notes"),
     "soul_winner_name": ("soul_winner_name", "soul_winner", "soul winner", "volunteer", "evangelist", "captured_by"),
 }
 
@@ -156,7 +155,6 @@ def bulk_import_contacts_csv(
         seen_phones_in_csv.add(phone_e164)
 
         location_met = (row.get(header_map.get("location_met", ""), "") or default_location or "").strip()[:150]
-        prayer_point = (row.get(header_map.get("prayer_point", ""), "") or "").strip()
         soul_winner = (row.get(header_map.get("soul_winner_name", ""), "") or default_soul_winner or "").strip()[:120]
 
         parsed_rows.append(
@@ -167,7 +165,6 @@ def bulk_import_contacts_csv(
                 "phone_e164": phone_e164,
                 "wa_id": e164_to_wa_id(phone_e164),
                 "location_met": location_met,
-                "prayer_point": prayer_point,
                 "soul_winner_name": soul_winner,
             }
         )
@@ -216,7 +213,6 @@ def bulk_import_contacts_csv(
             phone_e164=item["phone_e164"],
             wa_id=item["wa_id"],
             location_met=item["location_met"],
-            prayer_point=item["prayer_point"],
             soul_winner_name=item["soul_winner_name"],
             capture_source=OutreachContact.CaptureSource.CSV_IMPORT,
             drip_step=1,

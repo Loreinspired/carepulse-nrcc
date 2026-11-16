@@ -6,7 +6,7 @@ app_name = "outreach"
 
 urlpatterns = [
     path("", views.field_capture_view, name="field_capture"),
-    path("field/handshake/<int:pk>/", views.field_qr_handshake_view, name="field_qr_handshake"),
+    path("field/handshake/<str:rsvp_token>/", views.field_qr_handshake_view, name="field_qr_handshake"),
     path("dashboard/", views.dashboard_view, name="dashboard"),
     path("contacts/<int:pk>/mark-manual-sent/", views.mark_manual_sent_view, name="mark_manual_sent"),
     path("contacts/<int:pk>/reply/", views.coordinator_reply_view, name="coordinator_reply"),

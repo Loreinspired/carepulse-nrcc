@@ -74,7 +74,6 @@ class CostGuardRouterTests(TestCase):
             first_name="Chinedu",
             phone_e164="+2349051122334",
             location_met="Oja Oba",
-            prayer_point="Business expansion",
             drip_step=1,
             drip_status=OutreachContact.DripStatus.ACTIVE,
             last_inbound_at=now - timedelta(minutes=10),
