@@ -19,6 +19,15 @@ Church Evangelism & Outreach WhatsApp Drip Engine built for **New Reality Christ
 
 ---
 
+## User Interface
+
+Mobile-first and readable outdoors: large tap targets, plain-language labels, a bottom nav bar on phones.
+All styles and scripts ship with the app (`outreach/static/outreach/`: `app.css`, `app.js`, and a pinned
+`htmx-2.0.3.min.js`), so there is no build step and no CDN. Pages load quickly on mobile data and still work
+where CDNs are blocked.
+
+---
+
 ## Accounts & Security
 
 Every page requires a login **except** the public RSVP card (`/r/<token>/`), the Meta webhook

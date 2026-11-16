@@ -1,176 +1,129 @@
 {% extends "outreach/base.html" %}
+{% load ui %}
 
-{% block title %}Bulk CSV Import — CarePulse{% endblock %}
+{% block title %}Import contacts{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
 
 {% block content %}
-<div class="max-w-3xl mx-auto space-y-6">
-  <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 sm:p-6">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-      <div>
-        <h1 class="text-xl font-bold text-slate-900">Bulk Outreach CSV Import (Up to 5,000+ Souls)</h1>
-        <p class="text-sm text-slate-500 mt-0.5">
-          Normalizes Nigerian numbers to <code class="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">+234...</code>,
-          deduplicates phones, and staggers sends across hourly buckets with randomized jitter.
-        </p>
-      </div>
-      <a href="{% url 'outreach:sample_csv' %}"
-         class="shrink-0 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold">
-        Download Sample CSV
-      </a>
-    </div>
+<div class="page-head">
+  <h1 class="page-title">Import a contact list</h1>
+  <p class="page-sub">Add hundreds of people at once, e.g. from a crusade sign-up sheet. Duplicates and bad numbers are skipped automatically.</p>
+</div>
 
-    <form method="post" enctype="multipart/form-data" class="space-y-4">
-      {% csrf_token %}
-
-      <div>
-        <label for="id_csv_file" class="block text-sm font-medium text-slate-700 mb-1">
-          Outreach CSV File <span class="text-rose-500">*</span>
-        </label>
-        <input type="file" name="csv_file" id="id_csv_file" accept=".csv,text/csv" required
-               class="block w-full text-sm text-slate-700 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 border border-slate-300 rounded-xl p-1.5" />
-        <p class="text-xs text-slate-400 mt-1">
-          Columns supported: <code>first_name</code>, <code>last_name</code>, <code>phone</code>,
-          <code>location_met</code>, <code>soul_winner_name</code>.
-        </p>
-      </div>
-
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+{% if import_result %}
+  {% with r=import_result %}
+  <section class="card card-pad stack" aria-labelledby="result-title" style="margin-bottom:20px">
+    {% if r.created_count %}
+      <div class="success-banner flash" role="status">
+        <span class="check">{% icon "check" %}</span>
         <div>
-          <label for="id_max_per_hour" class="block text-sm font-medium text-slate-700 mb-1">
-            Hourly Stagger Rate
-          </label>
-          <input type="number" name="max_per_hour" id="id_max_per_hour"
-                 value="{{ form.max_per_hour.value|default:250 }}" min="1" max="5000" required
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-          <div class="flex gap-1.5 mt-1.5">
-            <button type="button" onclick="document.getElementById('id_max_per_hour').value=250"
-                    class="text-[11px] px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600">250/hr</button>
-            <button type="button" onclick="document.getElementById('id_max_per_hour').value=500"
-                    class="text-[11px] px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600">500/hr</button>
-            <button type="button" onclick="document.getElementById('id_max_per_hour').value=1000"
-                    class="text-[11px] px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600">1,000/hr</button>
+          <div class="bold" id="result-title">{{ r.created_count }} new contact{{ r.created_count|pluralize }} added</div>
+          <div class="small" style="color:var(--brand-800)">
+            {% if WA_CLOUD_API_ENABLED %}Messages are spread over {{ r.hours_spanned }} hours.{% else %}They're now in your “To send” list.{% endif %}
           </div>
         </div>
-
-        <div>
-          <label for="id_default_location" class="block text-sm font-medium text-slate-700 mb-1">
-            Default Location (if blank)
-          </label>
-          <input type="text" name="default_location" id="id_default_location"
-                 value="{{ form.default_location.value|default:'' }}"
-                 placeholder="e.g., Ado-Ekiti Crusade"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-        </div>
-
-        <div>
-          <label for="id_default_soul_winner" class="block text-sm font-medium text-slate-700 mb-1">
-            Default Team / Evangelist
-          </label>
-          <input type="text" name="default_soul_winner" id="id_default_soul_winner"
-                 value="{{ form.default_soul_winner.value|default:'' }}"
-                 placeholder="e.g., Evangelism Unit"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-        </div>
       </div>
+    {% else %}
+      <div class="alert alert-warning" role="status">{% icon "alert" %}<div id="result-title"><strong>No new contacts were added.</strong> Check the rows below.</div></div>
+    {% endif %}
 
-      <button type="submit"
-              class="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-xs transition">
-        Import Contacts &amp; Generate Jittered Schedule
-      </button>
-    </form>
+    <div class="stats" style="margin:0;grid-template-columns:repeat(3,1fr)">
+      <div class="stat tone-brand"><div class="stat-label">Added</div><div class="stat-value">{{ r.created_count }}</div></div>
+      <div class="stat"><div class="stat-label">Already had</div><div class="stat-value">{{ r.skipped_duplicate_count }}</div></div>
+      <div class="stat tone-rose"><div class="stat-label">Bad numbers</div><div class="stat-value" {% if r.invalid_count %}style="color:var(--rose-700)"{% endif %}>{{ r.invalid_count }}</div></div>
+    </div>
+
+    {% if r.errors %}
+      <details class="disclosure" open>
+        <summary>{% icon "alert" "icon-sm" %} <span class="bold">Rows that need fixing</span> {% icon "chevron-down" "icon-sm chev" %}</summary>
+        <div class="disclosure-body">
+          <ul class="error-list">
+            {% for err in r.errors %}
+              <li>
+                <div class="small"><strong>Row {{ err.row_number }}</strong>{% if err.name %} · {{ err.name }}{% endif %}{% if err.raw_phone %} · <span class="mono">{{ err.raw_phone }}</span>{% endif %}</div>
+                <div class="xs" style="color:var(--rose-700)">{{ err.reason }}</div>
+              </li>
+            {% endfor %}
+          </ul>
+          {% if r.invalid_count > r.errors|length %}<p class="hint">Showing the first {{ r.errors|length }}.</p>{% endif %}
+        </div>
+      </details>
+    {% endif %}
+
+    {% if r.preview_schedule and WA_CLOUD_API_ENABLED %}
+      <details class="disclosure">
+        <summary>{% icon "clock" "icon-sm" %} <span class="bold">First scheduled messages</span> {% icon "chevron-down" "icon-sm chev" %}</summary>
+        <div class="disclosure-body">
+          <div class="table-wrap">
+            <table class="table">
+              <thead><tr><th>Name</th><th>Phone</th><th>Sends at</th></tr></thead>
+              <tbody>
+                {% for row in r.preview_schedule %}
+                  <tr><td>{{ row.first_name }}</td><td class="mono">{{ row.phone_e164|phone_display }}</td><td class="nowrap">{{ row.next_send_at|date:"D j M, H:i" }}</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    {% endif %}
+
+    <a href="{% url 'outreach:dashboard' %}" class="btn btn-primary btn-block">Go to follow-ups {% icon "arrow-right" %}</a>
+  </section>
+  {% endwith %}
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" class="card card-pad stack stack-lg">
+  {% csrf_token %}
+
+  <div class="stack stack-sm">
+    <div class="steps-head"><span class="step-badge">1</span><h2 class="card-title">Get the template</h2></div>
+    <p class="small muted">A spreadsheet with columns <code>first_name</code>, <code>last_name</code>, <code>phone</code>, <code>location_met</code>, <code>soul_winner_name</code>. Only <strong>phone</strong> is required. Open it in Excel or Google Sheets, fill it in, and save as CSV.</p>
+    <a href="{% url 'outreach:sample_csv' %}" class="btn btn-secondary btn-sm" style="align-self:flex-start;width:max-content">{% icon "download" "icon-sm" %} Download template</a>
   </div>
 
-  {% if import_result %}
-    <div class="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 sm:p-6 space-y-5">
-      <div class="flex items-center justify-between">
-        <h2 class="text-lg font-bold text-slate-900">Import Summary</h2>
-        <span class="text-xs font-mono px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
-          Batch {{ import_result.batch_id }}
-        </span>
-      </div>
+  <div class="stack stack-sm">
+    <div class="steps-head"><span class="step-badge">2</span><h2 class="card-title">Choose your file</h2></div>
+    <label class="dropzone {% if form.csv_file.errors %}is-invalid{% endif %}">
+      <input type="file" name="csv_file" id="id_csv_file" accept=".csv,text/csv" required />
+      <span class="dropzone-icon">{% icon "file" "icon-lg" %}</span>
+      <span class="bold" data-file-name data-empty="Tap to choose a CSV file">Tap to choose a CSV file</span>
+      <span class="xs subtle">or drag it here</span>
+    </label>
+    {% if form.csv_file.errors %}<p class="error">{% icon "alert" "icon-sm" %} {{ form.csv_file.errors.0 }}</p>{% endif %}
+  </div>
 
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div class="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
-          <div class="text-xs text-emerald-700">Created</div>
-          <div class="text-2xl font-bold text-emerald-800">{{ import_result.created_count }}</div>
+  <details class="disclosure">
+    <summary>{% icon "pencil" "icon-sm" %} <span class="bold">Advanced options</span> <span class="xs subtle">(optional)</span> {% icon "chevron-down" "icon-sm chev" %}</summary>
+    <div class="disclosure-body stack">
+      <div class="grid-2">
+        <div class="field">
+          <label class="label small" for="id_default_location">Place, if a row has none</label>
+          <input class="input" type="text" name="default_location" id="id_default_location" value="{{ form.default_location.value|default:'' }}" placeholder="e.g. Ado-Ekiti Crusade" />
         </div>
-        <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
-          <div class="text-xs text-slate-600">Duplicates Skipped</div>
-          <div class="text-2xl font-bold text-slate-800">{{ import_result.skipped_duplicate_count }}</div>
-        </div>
-        <div class="p-3 rounded-xl bg-rose-50 border border-rose-200">
-          <div class="text-xs text-rose-700">Invalid Rows</div>
-          <div class="text-2xl font-bold text-rose-800">{{ import_result.invalid_count }}</div>
-        </div>
-        <div class="p-3 rounded-xl bg-sky-50 border border-sky-200">
-          <div class="text-xs text-sky-700">Window Spanned</div>
-          <div class="text-2xl font-bold text-sky-800">{{ import_result.hours_spanned }}h</div>
+        <div class="field">
+          <label class="label small" for="id_default_soul_winner">Team, if a row has none</label>
+          <input class="input" type="text" name="default_soul_winner" id="id_default_soul_winner" value="{{ form.default_soul_winner.value|default:'' }}" placeholder="e.g. Evangelism Unit" />
         </div>
       </div>
-
-      {% if import_result.preview_schedule %}
-        <div>
-          <h3 class="text-sm font-semibold text-slate-700 mb-2">Staggered Schedule Preview (First 10)</h3>
-          <div class="overflow-x-auto border border-slate-200 rounded-xl">
-            <table class="w-full text-xs sm:text-sm text-left">
-              <thead class="bg-slate-50 text-slate-600">
-                <tr>
-                  <th class="px-3 py-2">Name</th>
-                  <th class="px-3 py-2">Phone (E.164)</th>
-                  <th class="px-3 py-2">Location</th>
-                  <th class="px-3 py-2">Scheduled Send (WAT)</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100">
-                {% for row in import_result.preview_schedule %}
-                  <tr>
-                    <td class="px-3 py-2 font-medium">{{ row.first_name }}</td>
-                    <td class="px-3 py-2 font-mono">{{ row.phone_e164 }}</td>
-                    <td class="px-3 py-2">{{ row.location_met|default:"—" }}</td>
-                    <td class="px-3 py-2">{{ row.next_send_at|date:"M d, Y H:i:s" }}</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
+      <div class="field">
+        <label class="label small" for="id_max_per_hour">Automatic messages per hour</label>
+        <input class="input" type="number" name="max_per_hour" id="id_max_per_hour" value="{{ form.max_per_hour.value|default:250 }}" min="1" max="5000" required style="max-width:160px" />
+        <div class="chips">
+          <button type="button" class="chip" data-set-value="250" data-target="#id_max_per_hour">250 / hr</button>
+          <button type="button" class="chip" data-set-value="500" data-target="#id_max_per_hour">500 / hr</button>
+          <button type="button" class="chip" data-set-value="1000" data-target="#id_max_per_hour">1,000 / hr</button>
         </div>
-      {% endif %}
-
-      {% if import_result.errors %}
-        <div>
-          <h3 class="text-sm font-semibold text-rose-700 mb-2">Invalid Rows (up to 100 shown)</h3>
-          <div class="overflow-x-auto border border-rose-200 rounded-xl">
-            <table class="w-full text-xs text-left">
-              <thead class="bg-rose-50 text-rose-800">
-                <tr>
-                  <th class="px-3 py-2">Row #</th>
-                  <th class="px-3 py-2">Name</th>
-                  <th class="px-3 py-2">Raw Phone</th>
-                  <th class="px-3 py-2">Reason</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-rose-100">
-                {% for err in import_result.errors %}
-                  <tr>
-                    <td class="px-3 py-2">{{ err.row_number }}</td>
-                    <td class="px-3 py-2">{{ err.name }}</td>
-                    <td class="px-3 py-2 font-mono">{{ err.raw_phone }}</td>
-                    <td class="px-3 py-2 text-rose-700">{{ err.reason }}</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      {% endif %}
-
-      <div class="pt-2">
-        <a href="{% url 'outreach:dashboard' %}"
-           class="inline-flex items-center px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold">
-          Go to Coordinator Queue &rarr;
-        </a>
+        <p class="hint">Only used when automatic WhatsApp sending is on. Spreading messages out keeps the church number in good standing with WhatsApp.</p>
       </div>
     </div>
-  {% endif %}
-</div>
+  </details>
+
+  <div class="stack stack-sm">
+    <div class="steps-head"><span class="step-badge">3</span><h2 class="card-title">Import</h2></div>
+    <button type="submit" class="btn btn-primary btn-lg btn-block">
+      <span class="spinner" aria-hidden="true"></span>{% icon "upload" "icon btn-icon-idle" %} Import contacts
+    </button>
+  </div>
+</form>
 {% endblock %}

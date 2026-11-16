@@ -15,7 +15,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from outreach.forms import BulkImportForm, FieldCaptureForm, RsvpForm
+from outreach.forms import FIELD_LOCATIONS, BulkImportForm, FieldCaptureForm, RsvpForm
 from outreach.importer import bulk_import_contacts_csv
 from outreach.models import FollowUpNote, OutreachContact, WhatsAppMessage
 from outreach.services import (
@@ -34,6 +34,13 @@ from outreach.utils import build_wa_me_url, e164_to_wa_id, generate_qr_svg
 logger = logging.getLogger(__name__)
 
 
+_FINISHED_STATUSES = {
+    OutreachContact.DripStatus.COMPLETED,
+    OutreachContact.DripStatus.OPTED_OUT,
+    OutreachContact.DripStatus.INVALID_NUMBER,
+}
+
+
 def _enrich_contact_for_ui(contact: OutreachContact, base_url: str) -> OutreachContact:
     """Attach computed Mode B / 24h window UI attributes onto a contact instance."""
     active_step = max(1, min(contact.drip_step, 3))
@@ -43,7 +50,57 @@ def _enrich_contact_for_ui(contact: OutreachContact, base_url: str) -> OutreachC
     contact.ui_wame_url = build_manual_wame_url(contact, step=active_step)
     contact.ui_in_window = contact.is_in_service_window()
     contact.ui_rsvp_url = contact.get_rsvp_url(base_url=base_url)
+    contact.ui_actionable = contact.drip_status not in _FINISHED_STATUSES and not contact.is_opted_out
+
+    steps_done = 3 if contact.drip_status == OutreachContact.DripStatus.COMPLETED else active_step - 1
+    contact.ui_progress = [
+        "done" if i <= steps_done else ("now" if i == steps_done + 1 and contact.ui_actionable else "todo")
+        for i in (1, 2, 3)
+    ]
+    contact.ui_steps_done = steps_done
+
+    messages = list(contact.messages.all())
+    contact.ui_messages = messages
+    contact.ui_inbound_count = sum(1 for m in messages if m.direction == WhatsAppMessage.Direction.INBOUND)
+    contact.ui_notes = list(contact.notes.all())
     return contact
+
+
+def _router_feedback(contact: OutreachContact, result: dict) -> tuple[str, str]:
+    """Turn a CostGuardRouter result into a plain-language message and tone for the coordinator."""
+    action = result.get("action")
+    reason = result.get("reason", "")
+    if action == "sent_interactive":
+        return f"Follow-up {result.get('step')} sent on WhatsApp.", "success"
+    if action == "sent_utility_template":
+        return f"Confirmation message sent. Waiting for {contact.first_name} to reply.", "success"
+    if action == "deferred_tier_limit":
+        return "Today's WhatsApp sending limit is reached. It will go out automatically within the hour.", "warning"
+    if action == "fallback_on_error":
+        if contact.drip_status == OutreachContact.DripStatus.INVALID_NUMBER:
+            return "WhatsApp says this number isn't on WhatsApp.", "error"
+        return (
+            f"WhatsApp couldn't send this (code {result.get('error_code') or 'unknown'}). "
+            "It's now in the send-from-phone list.",
+            "error",
+        )
+    if action == "manual_fallback":
+        return {
+            "cloud_api_disabled": ("Automatic sending is off. Use “Open in WhatsApp” instead.", "warning"),
+            "silent_contact_cutoff": (
+                "They haven't replied in 24 hours, so this one needs to be sent from your phone.",
+                "warning",
+            ),
+            "unconfirmed_previous_attempt": (
+                "An earlier send wasn't confirmed, so it wasn't repeated. Please check, then send from your phone.",
+                "warning",
+            ),
+        }.get(reason, ("Moved to the send-from-phone list.", "warning"))
+    if reason == "send_in_flight":
+        return "Already sending. Check back in a moment.", "info"
+    if reason == "not_found_or_locked":
+        return "Someone else is working on this contact. Try again in a moment.", "info"
+    return "Nothing to send for this contact right now.", "info"
 
 
 def _inbox_filter() -> Q:
@@ -79,6 +136,7 @@ def _build_dashboard_metrics() -> dict:
         .count()
     )
 
+    rsvp_any_count = OutreachContact.objects.exclude(rsvp_status=OutreachContact.RsvpStatus.NONE).count()
     rsvp_confirmed_count = OutreachContact.objects.filter(
         rsvp_status__in=[
             OutreachContact.RsvpStatus.ATTENDING,
@@ -97,6 +155,7 @@ def _build_dashboard_metrics() -> dict:
         "manual_queue_count": manual_queue_count,
         "replied_count": replied_count,
         "rsvp_confirmed_count": rsvp_confirmed_count,
+        "rsvp_any_count": rsvp_any_count,
         "total_spend_usd": total_spend,
         "daily_tier_limit": settings.WA_MESSAGING_TIER_DAILY_LIMIT,
         "remaining_tier_budget": get_remaining_tier_budget(now=now),
@@ -165,7 +224,19 @@ def field_capture_view(request):
             }
         )
 
-    return render(request, "outreach/field_capture.html", {"form": form})
+    return render(
+        request,
+        "outreach/field_capture.html",
+        {
+            "form": form,
+            "locations": FIELD_LOCATIONS,
+            "outcomes": [
+                (OutreachContact.OutreachOutcome.INVITED, "Invited to church", "church", "brand"),
+                (OutreachContact.OutreachOutcome.GOT_SAVED, "Got saved", "heart", "gold"),
+                (OutreachContact.OutreachOutcome.FILLED_HOLY_GHOST, "Got filled with the Holy Ghost", "flame", "violet"),
+            ],
+        },
+    )
 
 
 @require_http_methods(["GET", "POST"])
@@ -207,6 +278,8 @@ def field_qr_handshake_view(request, rsvp_token: str):
 def dashboard_view(request):
     """Coordinator dashboard: Mode B 1-Tap wa.me Queue, Replied Inbox, Audio Player, & RSVPs."""
     tab = request.GET.get("tab", "queue")
+    if tab not in {"queue", "inbox", "rsvp", "all"}:
+        tab = "queue"
     query = (request.GET.get("q") or "").strip()
     base_url = request.build_absolute_uri("/").rstrip("/")
 
@@ -240,6 +313,12 @@ def dashboard_view(request):
         "query": query,
         "metrics": metrics,
         "is_htmx": is_htmx,
+        "tab_items": [
+            ("queue", "To send", metrics["manual_queue_count"]),
+            ("inbox", "Replies", metrics["replied_count"]),
+            ("rsvp", "RSVPs", metrics["rsvp_any_count"]),
+            ("all", "All", metrics["total_contacts"]),
+        ],
     }
     if is_htmx:
         return render(request, "outreach/partials/dashboard_list.html", context)
@@ -266,15 +345,15 @@ def mark_manual_sent_view(request, pk: int):
         already_done = contact.drip_status == OutreachContact.DripStatus.COMPLETED
         if expected_step is None or expected_step != step or already_done:
             feedback = (
-                "Please refresh: this card was out of date."
+                "This card was out of date, so it has been refreshed. Please check and try again."
                 if expected_step is None
-                else f"Step {expected_step} was already logged — nothing recorded twice."
+                else f"Message {expected_step} was already marked as sent, so nothing was recorded twice."
             )
             _enrich_contact_for_ui(contact, base_url)
             return render(
                 request,
                 "outreach/partials/contact_card.html",
-                {"contact": contact, "feedback": feedback},
+                {"contact": contact, "feedback": feedback, "feedback_tone": "info"},
             )
         _log_manual_step(contact, step)
 
@@ -282,7 +361,14 @@ def mark_manual_sent_view(request, pk: int):
     return render(
         request,
         "outreach/partials/contact_card.html",
-        {"contact": contact, "feedback": f"Step {step} logged via 1-Tap wa.me ($0.00)!"},
+        {
+            "contact": contact,
+            "feedback": (
+                "All 3 follow-up messages sent. Well done!"
+                if step >= 3
+                else f"Message {step} marked as sent. Message {step + 1} is ready when you are."
+            ),
+        },
     )
 
 
@@ -334,7 +420,7 @@ def coordinator_reply_view(request, pk: int):
         return render(
             request,
             "outreach/partials/contact_card.html",
-            {"contact": contact, "feedback": "Please type a reply message first."},
+            {"contact": contact, "feedback": "Type your reply first.", "feedback_tone": "info", "open_thread": True},
         )
 
     feedback = ""
@@ -358,10 +444,10 @@ def coordinator_reply_view(request, pk: int):
             )
             contact.last_outbound_at = timezone.now()
             contact.save(update_fields=["last_outbound_at", "updated_at"])
-            feedback = "Reply sent via Cloud API ($0.00 free window)."
+            feedback = "Reply sent on WhatsApp."
         except MetaCloudAPIError as exc:
             fallback_url = build_wa_me_url(contact.phone_e164, reply_text)
-            feedback = f"Cloud API error ({exc.error_code}); use 1-Tap wa.me link below."
+            feedback = "WhatsApp couldn't send it automatically. Send it from your phone instead:"
     else:
         fallback_url = build_wa_me_url(contact.phone_e164, reply_text)
         WhatsAppMessage.objects.create(
@@ -373,13 +459,13 @@ def coordinator_reply_view(request, pk: int):
             delivery_status=WhatsAppMessage.DeliveryStatus.MANUAL_OPENED,
             estimated_cost_usd=Decimal("0.0000"),
         )
-        feedback = "24h window closed or Cloud API disabled — tap 'Open Reply in WhatsApp' to send free."
+        feedback = "Your reply is ready. Tap to send it from your WhatsApp:"
 
     _enrich_contact_for_ui(contact, base_url)
     return render(
         request,
         "outreach/partials/contact_card.html",
-        {"contact": contact, "feedback": feedback, "reply_wame_url": fallback_url},
+        {"contact": contact, "feedback": feedback, "reply_wame_url": fallback_url, "open_thread": True},
     )
 
 
@@ -388,7 +474,7 @@ def add_note_view(request, pk: int):
     """HTMX endpoint: attach a pastoral / volunteer follow-up note."""
     contact = get_object_or_404(OutreachContact, pk=pk)
     note_text = (request.POST.get("note") or "").strip()
-    author = (request.POST.get("author_name") or "Coordinator").strip()
+    author = (request.user.get_full_name() or request.user.get_username() or "Coordinator").strip()
     if note_text:
         FollowUpNote.objects.create(contact=contact, author_name=author[:120], note=note_text)
 
@@ -397,7 +483,12 @@ def add_note_view(request, pk: int):
     return render(
         request,
         "outreach/partials/contact_card.html",
-        {"contact": contact, "feedback": "Follow-up note saved."},
+        {
+            "contact": contact,
+            "feedback": "Note saved." if note_text else "Type a note first.",
+            "feedback_tone": "success" if note_text else "info",
+            "open_notes": True,
+        },
     )
 
 
@@ -414,7 +505,8 @@ def trigger_step_now_view(request, pk: int):
         "outreach/partials/contact_card.html",
         {
             "contact": contact,
-            "feedback": f"Router action: {result.get('action')} (cost: ${result.get('cost_usd', '0.0000')})",
+            "feedback": _router_feedback(contact, result)[0],
+            "feedback_tone": _router_feedback(contact, result)[1],
         },
     )
 
@@ -571,12 +663,12 @@ def toggle_opt_out_view(request, pk: int):
             contact.next_send_at = timezone.now()
         else:
             contact.drip_status = OutreachContact.DripStatus.MANUAL_FALLBACK
-        feedback = "Contact re-enabled for outreach follow-up."
+        feedback = f"{contact.first_name} will receive follow-ups again."
     else:
         contact.is_opted_out = True
         contact.drip_status = OutreachContact.DripStatus.OPTED_OUT
         contact.next_send_at = None
-        feedback = "Contact opted out (STOP) — no further messages will be sent."
+        feedback = f"{contact.first_name} won't receive any more messages."
 
     contact.save(update_fields=["is_opted_out", "drip_status", "next_send_at", "updated_at"])
     base_url = request.build_absolute_uri("/").rstrip("/")

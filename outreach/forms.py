@@ -5,6 +5,19 @@ from outreach.models import OutreachContact
 from outreach.utils import PhoneNormalizationError, normalize_nigeria_phone
 
 
+# Common outreach spots in Ado-Ekiti, offered as one-tap chips on the capture form.
+FIELD_LOCATIONS = [
+    "Fajuyi Park",
+    "Oja Oba Market",
+    "EKSU Gate",
+    "ABUAD / Ikere Road",
+    "Federal Poly Axis",
+    "Basiri",
+    "Okesa / Old Garage",
+    "Ajilosun",
+]
+
+
 class FieldCaptureForm(forms.Form):
     """15-second mobile capture form for soul-winners in Ado-Ekiti."""
 
@@ -101,10 +114,10 @@ class RsvpForm(forms.Form):
 
     rsvp_status = forms.ChoiceField(
         choices=[
-            (OutreachContact.RsvpStatus.ATTENDING, "Yes, I'm Coming This Sunday"),
-            (OutreachContact.RsvpStatus.NEED_RIDE, "Yes, Coming — I Need a Free Ride / Bus"),
-            (OutreachContact.RsvpStatus.MAYBE, "Might Make It — Keep Me Updated"),
-            (OutreachContact.RsvpStatus.PRAYER_ONLY, "Can't Attend Sunday — Please Keep Praying"),
+            (OutreachContact.RsvpStatus.ATTENDING, "Yes, I'm coming"),
+            (OutreachContact.RsvpStatus.NEED_RIDE, "Yes, but I need a free ride"),
+            (OutreachContact.RsvpStatus.MAYBE, "Maybe, please keep me posted"),
+            (OutreachContact.RsvpStatus.PRAYER_ONLY, "I can't come, but please pray for me"),
         ],
         widget=forms.RadioSelect,
     )

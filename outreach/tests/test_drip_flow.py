@@ -279,7 +279,7 @@ class DuplicateSendSafetyTests(TestCase):
         web.force_login(user)
         with patch("outreach.services.MetaWhatsAppClient", return_value=self.client_mock):
             resp = web.post(reverse("outreach:trigger_step_now", args=[self.contact.pk]), HTTP_HX_REQUEST="true")
-        self.assertContains(resp, "deferred_tier_limit")
+        self.assertContains(resp, "sending limit is reached")
         self.client_mock.send_utility_template.assert_not_called()
 
     def test_concurrent_duplicate_inbound_wamid_is_skipped_without_error(self):
@@ -324,7 +324,7 @@ class ManualDoubleTapTests(TestCase):
         contact.refresh_from_db()
 
         self.assertEqual(contact.drip_step, 2)
-        self.assertContains(second, "already logged")
+        self.assertContains(second, "already marked as sent")
         self.assertEqual(WhatsAppMessage.objects.filter(contact=contact).count(), 1)
 
 

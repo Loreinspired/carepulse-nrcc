@@ -1,69 +1,84 @@
 {% extends "outreach/base.html" %}
+{% load ui %}
 
-{% block title %}Instant Field QR Handshake — CarePulse{% endblock %}
+{% block title %}Scan to connect{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
 
 {% block content %}
-<div class="max-w-lg mx-auto space-y-4">
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6 text-center">
-    <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold mb-3">
-      Saved: {{ contact.full_name }} ({{ contact.phone_e164 }})
-    </div>
-
-    <h1 class="text-xl font-bold text-slate-900">Instant $0.00 Field Handshake</h1>
-    <p class="text-sm text-slate-600 mt-1">
-      Ask <strong>{{ contact.first_name }}</strong> to scan this QR code with their phone camera and tap
-      <strong>Send</strong> in WhatsApp. This opens a free 24-hour inbound conversation!
-    </p>
-
-    <form method="post" class="mt-4 inline-flex flex-wrap justify-center gap-1 rounded-xl bg-slate-100 p-1 text-xs font-semibold">
-      {% csrf_token %}
-      {% for value, label in outcome_choices %}
-        <button type="submit" name="outcome" value="{{ value }}"
-                class="px-3 py-1.5 rounded-lg transition {% if contact.outreach_outcome == value %}bg-white shadow-xs {% if value == 'GOT_SAVED' %}text-amber-700{% elif value == 'FILLED_HOLY_GHOST' %}text-violet-700{% else %}text-emerald-700{% endif %}{% else %}text-slate-600 hover:text-slate-900{% endif %}">
-          {{ label }}
-        </button>
-      {% endfor %}
-    </form>
-
-    <div class="my-5 mx-auto w-56 h-56 p-3 bg-white rounded-2xl border-2 border-emerald-200 shadow-inner flex items-center justify-center">
-      {{ qr_svg|safe }}
-    </div>
-
-    <div class="bg-slate-50 rounded-xl p-3 text-left border border-slate-200 mb-4">
-      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
-        Pre-filled Message to {{ CHURCH_SHORT_NAME }}
-      </div>
-      <p class="text-sm text-slate-700 italic">"{{ prefill_text }}"</p>
-    </div>
-
-    <div class="space-y-2.5">
-      <a href="{{ handshake_url }}" target="_blank" rel="noopener"
-         class="block w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-sm transition">
-        Open Inbound Handshake Link (wa.me)
-      </a>
-
-      <a href="{{ manual_wame_url }}" target="_blank" rel="noopener"
-         class="block w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium text-sm transition">
-        Or Message {{ contact.first_name }} Directly from Your Phone
-      </a>
-
-      <div class="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 text-xs text-slate-500">
-        <span>Personal RSVP Card:</span>
-        <a href="{{ rsvp_url }}" target="_blank" class="text-emerald-700 underline truncate max-w-[230px]">
-          {{ rsvp_url }}
-        </a>
-      </div>
+<div class="stack">
+  <div class="success-banner flash" role="status">
+    <span class="check">{% icon "check" %}</span>
+    <div class="grow">
+      <div class="bold">Saved {{ contact.full_name }}</div>
+      <div class="small" style="color:var(--brand-800)">{{ contact.phone_e164|phone_display }}{% if contact.location_met %} · {{ contact.location_met }}{% endif %}</div>
     </div>
   </div>
 
-  <div class="flex gap-3">
-    <a href="{% url 'outreach:field_capture' %}"
-       class="flex-1 text-center py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm transition">
-      + Log Next Prospect
+  <div class="card card-pad center stack">
+    <div>
+      <h1 class="page-title">Let {{ contact.first_name }} scan this</h1>
+      <p class="page-sub">It opens WhatsApp with a message ready to send to the church. Free for both of you.</p>
+    </div>
+
+    <div class="qr-frame" aria-label="QR code that opens WhatsApp to message {{ CHURCH_SHORT_NAME }}" role="img">
+      {{ qr_svg|safe }}
+    </div>
+
+    <ol class="how-to" style="text-align:left;max-width:360px;margin-left:auto;margin-right:auto">
+      <li><span>{{ contact.first_name }} points their <strong>phone camera</strong> at the code and taps the link.</span></li>
+      <li><span>WhatsApp opens. They tap <strong>Send</strong>. That's it!</span></li>
+    </ol>
+  </div>
+
+  <div class="card card-pad stack stack-sm">
+    <div class="row between">
+      <h2 class="card-title">Outcome</h2>
+      <span class="xs subtle">Changes the message they send</span>
+    </div>
+    <form method="post" class="segmented" data-allow-resubmit>
+      {% csrf_token %}
+      {% for value, label in outcome_choices %}
+        <button type="submit" name="outcome" value="{{ value }}"
+                class="tone-{{ value|outcome_tone }}"
+                aria-pressed="{% if contact.outreach_outcome == value %}true{% else %}false{% endif %}">
+          {% icon value|outcome_icon "icon-sm" %} {{ value|outcome_label }}
+        </button>
+      {% endfor %}
+    </form>
+    <p class="quote">"{{ prefill_text }}"</p>
+  </div>
+
+  <details class="card disclosure" style="border-radius:var(--radius-lg)">
+    <summary>
+      {% icon "help" "icon-sm" %}
+      <span class="bold">Can't scan? Other ways to connect</span>
+      {% icon "chevron-down" "icon-sm chev" %}
+    </summary>
+    <div class="disclosure-body stack stack-sm">
+      <a href="{{ handshake_url }}" target="_blank" rel="noopener" class="btn btn-secondary btn-block">
+        {% icon "smartphone" %} Open the link on their phone instead
+      </a>
+      <a href="{{ manual_wame_url }}" target="_blank" rel="noopener" class="btn btn-secondary btn-block">
+        {% icon "send" %} Message {{ contact.first_name }} from my phone
+      </a>
+      <div>
+        <label class="label small" for="rsvp-link" style="margin-top:8px">Their personal Sunday RSVP link</label>
+        <div class="copy-field">
+          <input class="input" id="rsvp-link" value="{{ rsvp_url }}" readonly onclick="this.select()" />
+          <button type="button" class="btn btn-secondary" data-copy-target="#rsvp-link">
+            {% icon "copy" "icon-sm" %} <span data-copy-label>Copy</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <div class="stack stack-sm" style="padding-top:4px">
+    <a href="{% url 'outreach:field_capture' %}" class="btn btn-primary btn-lg btn-block">
+      {% icon "user-plus" %} Log next contact
     </a>
-    <a href="{% url 'outreach:dashboard' %}"
-       class="flex-1 text-center py-3 px-4 rounded-xl bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-semibold text-sm transition">
-      View Coordinator Queue
+    <a href="{% url 'outreach:dashboard' %}" class="btn btn-ghost btn-block">
+      Go to follow-ups {% icon "arrow-right" "icon-sm" %}
     </a>
   </div>
 </div>

@@ -1,94 +1,101 @@
-<!DOCTYPE html>
+{% load static ui %}<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{% block title %}CarePulse — {{ CHURCH_SHORT_NAME }}{% endblock %}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#064e3b" />
+  <title>{% block title %}CarePulse{% endblock %} · {{ CHURCH_SHORT_NAME }}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23059669'/%3E%3Cpath d='M9 17.5l4.5 4.5L23 11' stroke='white' stroke-width='3.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="{% static 'outreach/app.css' %}" />
+  <script src="{% static 'outreach/htmx-2.0.3.min.js' %}" defer></script>
+  <script src="{% static 'outreach/app.js' %}" defer></script>
+  {% block head %}{% endblock %}
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-screen flex flex-col antialiased">
-  {% block navbar %}
-  <header class="bg-emerald-900 text-white shadow-sm sticky top-0 z-30">
-    <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-      <div class="flex items-center gap-2.5">
-        <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 font-bold text-white text-sm">
-          CP
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  {% with url_name=request.resolver_match.url_name %}
+  {% block header %}
+  <header class="app-header">
+    <div class="container">
+      <a class="brand" href="{% if user.is_authenticated %}{% url 'outreach:field_capture' %}{% else %}{% url 'login' %}{% endif %}">
+        <span class="brand-mark">{% icon "check" %}</span>
+        <span class="truncate">
+          <span class="brand-name">CarePulse</span>
+          <span class="brand-sub truncate">{{ CHURCH_SHORT_NAME }}</span>
         </span>
-        <div>
-          <a href="{% url 'outreach:field_capture' %}" class="font-semibold text-base leading-tight block">
-            CarePulse
+      </a>
+
+      {% if user.is_authenticated %}
+        <nav class="top-nav" aria-label="Main">
+          <a href="{% url 'outreach:field_capture' %}" {% if url_name == 'field_capture' or url_name == 'field_qr_handshake' %}aria-current="page"{% endif %}>
+            {% icon "user-plus" "icon-sm" %} New contact
           </a>
-          <span class="text-xs text-emerald-200 block">{{ CHURCH_SHORT_NAME }}</span>
-        </div>
-      </div>
+          <a href="{% url 'outreach:dashboard' %}" {% if url_name == 'dashboard' %}aria-current="page"{% endif %}>
+            {% icon "chat" "icon-sm" %} Follow-ups
+          </a>
+          <a href="{% url 'outreach:bulk_import' %}" {% if url_name == 'bulk_import' %}aria-current="page"{% endif %}>
+            {% icon "upload" "icon-sm" %} Import
+          </a>
+        </nav>
 
-      <div class="flex items-center gap-2 text-xs">
-        {% if WA_CLOUD_API_ENABLED %}
-          <span class="px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-100 font-medium">
-            Mode A: Cloud API + Cost Guard
-          </span>
-        {% else %}
-          <span class="px-2.5 py-1 rounded-full bg-amber-400/20 border border-amber-300/40 text-amber-100 font-medium">
-            Mode B: 1-Tap wa.me ($0.00)
-          </span>
-        {% endif %}
-      </div>
+        <div class="header-end">
+          <details class="menu">
+            <summary class="avatar-btn" aria-label="Account menu for {{ user.get_username }}">
+              {{ user.get_username|slice:":1"|upper }}
+            </summary>
+            <div class="menu-panel" role="menu">
+              <div class="menu-head">
+                <div class="bold truncate">{{ user.get_full_name|default:user.get_username }}</div>
+                <div class="xs subtle">
+                  {% if WA_CLOUD_API_ENABLED %}Automatic WhatsApp sending is on{% else %}Messages are sent from your phone{% endif %}
+                </div>
+              </div>
+              {% if user.is_staff %}
+                <a class="menu-item" role="menuitem" href="/admin/">{% icon "shield" %} Admin &amp; volunteer logins</a>
+              {% endif %}
+              <form method="post" action="{% url 'logout' %}" data-allow-resubmit>
+                {% csrf_token %}
+                <button type="submit" class="menu-item danger" role="menuitem" title="Signed in as {{ user.get_username }}">
+                  {% icon "log-out" %} Log out ({{ user.get_username }})
+                </button>
+              </form>
+            </div>
+          </details>
+        </div>
+      {% endif %}
     </div>
-
-    {% if user.is_authenticated %}
-    <nav class="bg-emerald-950/60 border-t border-emerald-800">
-      <div class="max-w-6xl mx-auto px-4 flex gap-1 overflow-x-auto text-sm">
-        <a href="{% url 'outreach:field_capture' %}"
-           class="px-3 py-2.5 whitespace-nowrap font-medium border-b-2 {% if request.resolver_match.url_name == 'field_capture' or request.resolver_match.url_name == 'field_qr_handshake' %}border-emerald-400 text-white{% else %}border-transparent text-emerald-200 hover:text-white{% endif %}">
-          Field Capture
-        </a>
-        <a href="{% url 'outreach:dashboard' %}"
-           class="px-3 py-2.5 whitespace-nowrap font-medium border-b-2 {% if request.resolver_match.url_name == 'dashboard' %}border-emerald-400 text-white{% else %}border-transparent text-emerald-200 hover:text-white{% endif %}">
-          Coordinator Queue
-        </a>
-        <a href="{% url 'outreach:bulk_import' %}"
-           class="px-3 py-2.5 whitespace-nowrap font-medium border-b-2 {% if request.resolver_match.url_name == 'bulk_import' %}border-emerald-400 text-white{% else %}border-transparent text-emerald-200 hover:text-white{% endif %}">
-          Bulk CSV Import
-        </a>
-        <div class="ml-auto flex items-center gap-1">
-          {% if user.is_staff %}
-            <a href="/admin/"
-               class="px-3 py-2.5 whitespace-nowrap font-medium border-b-2 border-transparent text-emerald-200 hover:text-white">
-              Admin
-            </a>
-          {% endif %}
-          <form method="post" action="{% url 'logout' %}">
-            {% csrf_token %}
-            <button type="submit"
-                    class="px-3 py-2.5 whitespace-nowrap font-medium border-b-2 border-transparent text-emerald-200 hover:text-white"
-                    title="Signed in as {{ user.get_username }}">
-              Log out ({{ user.get_username }})
-            </button>
-          </form>
-        </div>
-      </div>
-    </nav>
-    {% endif %}
   </header>
   {% endblock %}
 
-  <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-6">
-    {% block content %}{% endblock %}
+  <main id="main" class="app-main {% block main_class %}{% if not user.is_authenticated %}no-nav{% endif %}{% endblock %}">
+    {% block main %}
+    <div class="container {% block container_class %}{% endblock %}">
+      {% block content %}{% endblock %}
+    </div>
+    {% endblock %}
   </main>
 
-  <footer class="text-center text-xs text-slate-400 py-4 border-t border-slate-200 bg-white">
-    CarePulse Evangelism Follow-Up Engine &middot; {{ CHURCH_NAME }}
-  </footer>
+  {% block footer %}
+  <footer class="app-footer">CarePulse · {{ CHURCH_NAME }} · {{ CHURCH_ADDRESS }}</footer>
+  {% endblock %}
 
-  <script>
-    document.body.addEventListener('htmx:configRequest', function (event) {
-      const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
-      if (csrfInput) {
-        event.detail.headers['X-CSRFToken'] = csrfInput.value;
-      }
-    });
-  </script>
-  {% block extra_js %}{% endblock %}
+  {% block bottom_nav %}
+  {% if user.is_authenticated %}
+    <nav class="bottom-nav" aria-label="Main">
+      <a href="{% url 'outreach:field_capture' %}" {% if url_name == 'field_capture' or url_name == 'field_qr_handshake' %}aria-current="page"{% endif %}>
+        {% icon "user-plus" %} New contact
+      </a>
+      <a href="{% url 'outreach:dashboard' %}" {% if url_name == 'dashboard' %}aria-current="page"{% endif %}>
+        {% icon "chat" %} Follow-ups
+        {% with n=nav_queue_count %}{% if n %}<span class="nav-badge" aria-label="{{ n }} waiting">{% if n > 99 %}99+{% else %}{{ n }}{% endif %}</span>{% endif %}{% endwith %}
+      </a>
+      <a href="{% url 'outreach:bulk_import' %}" {% if url_name == 'bulk_import' %}aria-current="page"{% endif %}>
+        {% icon "upload" %} Import
+      </a>
+    </nav>
+  {% endif %}
+  {% endblock %}
+  {% endwith %}
 </body>
 </html>

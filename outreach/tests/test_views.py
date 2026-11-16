@@ -22,7 +22,7 @@ class ViewsAndPollerTests(TestCase):
         get_resp = self.client.get(reverse("outreach:field_capture"))
         self.assertEqual(get_resp.status_code, 200)
         self.assertNotContains(get_resp, "Prayer Point")
-        self.assertContains(get_resp, "Got Filled with the Holy Ghost")
+        self.assertContains(get_resp, "Got filled with the Holy Ghost")
 
         resp = self.client.post(
             reverse("outreach:field_capture"),
@@ -78,7 +78,8 @@ class ViewsAndPollerTests(TestCase):
         dash_resp = self.client.get(reverse("outreach:dashboard"))
         self.assertEqual(dash_resp.status_code, 200)
         self.assertContains(dash_resp, "Segun")
-        self.assertContains(dash_resp, "1-Tap Open in WhatsApp")
+        self.assertContains(dash_resp, "Open in WhatsApp")
+        self.assertContains(dash_resp, "I've sent it")
 
         # Mark Steps 1, 2, 3 via HTMX
         mark_url = reverse("outreach:mark_manual_sent", args=[contact.pk])
@@ -143,3 +144,20 @@ class ViewsAndPollerTests(TestCase):
         self.assertGreater(due.next_send_at, now)
         # The task receives the exact lease it must still hold when it runs
         mock_delay.assert_called_once_with(due.pk, due.next_send_at.isoformat())
+
+    def test_pages_use_bundled_assets_not_cdns(self):
+        """UI must work on patchy mobile data and where CDNs are blocked: no external scripts/styles."""
+        contact = OutreachContact.objects.create(first_name="Ayo", phone_e164="+2347034445566")
+        pages = [
+            reverse("outreach:field_capture"),
+            reverse("outreach:dashboard"),
+            reverse("outreach:bulk_import"),
+            reverse("outreach:field_qr_handshake", args=[contact.rsvp_token]),
+            reverse("outreach:rsvp_card", args=[contact.rsvp_token]),
+        ]
+        for url in pages:
+            html = self.client.get(url).content.decode()
+            self.assertIn("/static/outreach/app.css", html, url)
+            self.assertIn("/static/outreach/htmx-2.0.3.min.js", html, url)
+            for cdn in ("cdn.tailwindcss.com", "unpkg.com", "cdn.jsdelivr.net"):
+                self.assertNotIn(cdn, html, url)

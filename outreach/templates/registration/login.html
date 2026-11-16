@@ -1,41 +1,45 @@
 {% extends "outreach/base.html" %}
+{% load ui %}
 
-{% block title %}Sign In — CarePulse{% endblock %}
+{% block title %}Sign in{% endblock %}
+{% block bottom_nav %}{% endblock %}
+{% block footer %}{% endblock %}
+{% block main_class %}no-nav{% endblock %}
 
-{% block content %}
-<div class="max-w-sm mx-auto">
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6 space-y-4">
-    <div>
-      <h1 class="text-xl font-bold text-slate-900">Sign in to CarePulse</h1>
-      <p class="text-sm text-slate-500 mt-1">For {{ CHURCH_SHORT_NAME }} outreach volunteers and coordinators.</p>
+{% block main %}
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="center" style="margin-bottom:20px">
+      <span class="brand-mark" style="width:56px;height:56px;border-radius:16px;margin:0 auto 12px;color:#fff">{% icon "check" "icon-lg" %}</span>
+      <h1 class="page-title">Welcome back</h1>
+      <p class="page-sub">Sign in to the {{ CHURCH_SHORT_NAME }} follow-up team.</p>
     </div>
 
-    {% if form.errors %}
-      <div class="px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-sm text-rose-800">
-        Your username and password didn't match. Please try again.
-      </div>
-    {% endif %}
+    <div class="card card-pad">
+      <form method="post" action="{% url 'login' %}" class="stack">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}" />
 
-    <form method="post" action="{% url 'login' %}" class="space-y-4">
-      {% csrf_token %}
-      <input type="hidden" name="next" value="{{ next }}" />
-      <div>
-        <label for="id_username" class="block text-sm font-medium text-slate-700 mb-1">Username</label>
-        <input type="text" name="username" id="id_username" autocomplete="username" autocapitalize="none" required autofocus
-               value="{{ form.username.value|default:'' }}"
-               class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-      </div>
-      <div>
-        <label for="id_password" class="block text-sm font-medium text-slate-700 mb-1">Password</label>
-        <input type="password" name="password" id="id_password" autocomplete="current-password" required
-               class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-      </div>
-      <button type="submit"
-              class="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-base shadow-sm transition">
-        Sign in
-      </button>
-    </form>
-    <p class="text-xs text-slate-400">Need an account? Ask your outreach coordinator.</p>
+        {% if form.errors %}
+          <div class="alert alert-error flash" role="alert">{% icon "alert" %}<div>That username and password don't match. Please try again.</div></div>
+        {% endif %}
+
+        <div class="field">
+          <label class="label" for="id_username">Username</label>
+          <input class="input" type="text" name="username" id="id_username" autocomplete="username"
+                 autocapitalize="none" autocorrect="off" spellcheck="false" required autofocus
+                 value="{{ form.username.value|default:'' }}" />
+        </div>
+        <div class="field">
+          <label class="label" for="id_password">Password</label>
+          <input class="input" type="password" name="password" id="id_password" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg btn-block">
+          <span class="spinner" aria-hidden="true"></span> Sign in
+        </button>
+      </form>
+    </div>
+    <p class="center small subtle" style="margin-top:16px">No account? Ask your outreach coordinator to add you.</p>
   </div>
 </div>
 {% endblock %}

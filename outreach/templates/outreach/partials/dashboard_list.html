@@ -1,27 +1,46 @@
+{% load ui %}
 {% if is_htmx %}
   {% include "outreach/partials/dashboard_tabs.html" with oob=True %}
 {% endif %}
-<div class="space-y-4">
-  {% if contacts %}
+{% if contacts %}
+  <div class="contact-list">
     {% for contact in contacts %}
       {% include "outreach/partials/contact_card.html" %}
     {% endfor %}
-  {% else %}
-    <div class="bg-white rounded-2xl border border-dashed border-slate-300 p-8 text-center">
-      <p class="text-slate-600 font-medium">No contacts match this view yet.</p>
-      <p class="text-sm text-slate-400 mt-1">
-        Log a soul in the field or upload an outreach CSV to populate your queue.
-      </p>
-      <div class="mt-4 flex justify-center gap-3">
-        <a href="{% url 'outreach:field_capture' %}"
-           class="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700">
-          + Field Capture
-        </a>
-        <a href="{% url 'outreach:bulk_import' %}"
-           class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200">
-          Import CSV
-        </a>
-      </div>
-    </div>
+  </div>
+  {% if contacts|length >= 100 %}
+    <p class="center small subtle" style="margin-top:16px">Showing the 100 most recent. Use search to find someone specific.</p>
   {% endif %}
-</div>
+{% else %}
+  <div class="empty">
+    {% if query %}
+      <div class="empty-icon">{% icon "search" "icon-lg" %}</div>
+      <h3>No one matches “{{ query }}”</h3>
+      <p>Try a first name, the last digits of a phone number, or a place.</p>
+    {% elif tab == "queue" %}
+      <div class="empty-icon">{% icon "check-circle" "icon-lg" %}</div>
+      <h3>All caught up!</h3>
+      <p>No one is waiting for a message right now. New contacts from the field will appear here.</p>
+      <div class="row row-wrap">
+        <a href="{% url 'outreach:field_capture' %}" class="btn btn-primary">{% icon "user-plus" %} Log a contact</a>
+        <a href="{% url 'outreach:bulk_import' %}" class="btn btn-secondary">{% icon "upload" %} Import a list</a>
+      </div>
+    {% elif tab == "inbox" %}
+      <div class="empty-icon">{% icon "inbox" "icon-lg" %}</div>
+      <h3>No replies yet</h3>
+      <p>When someone writes back or sends a voice note, it shows up here.</p>
+    {% elif tab == "rsvp" %}
+      <div class="empty-icon">{% icon "calendar" "icon-lg" %}</div>
+      <h3>No Sunday RSVPs yet</h3>
+      <p>Each follow-up message includes a personal RSVP link. Answers appear here and in the bus list.</p>
+    {% else %}
+      <div class="empty-icon">{% icon "users" "icon-lg" %}</div>
+      <h3>No contacts yet</h3>
+      <p>Log someone you met in the field, or import a list from a crusade or outreach.</p>
+      <div class="row row-wrap">
+        <a href="{% url 'outreach:field_capture' %}" class="btn btn-primary">{% icon "user-plus" %} Log a contact</a>
+        <a href="{% url 'outreach:bulk_import' %}" class="btn btn-secondary">{% icon "upload" %} Import a list</a>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}

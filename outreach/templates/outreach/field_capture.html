@@ -1,132 +1,118 @@
 {% extends "outreach/base.html" %}
+{% load ui %}
 
-{% block title %}Field Soul Capture — CarePulse{% endblock %}
+{% block title %}New contact{% endblock %}
+{% block container_class %}container-narrow{% endblock %}
 
 {% block content %}
-<div class="max-w-lg mx-auto">
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6">
-    <div class="flex items-start justify-between gap-3 mb-5">
-      <div>
-        <h1 class="text-xl font-bold text-slate-900">15-Second Soul Capture</h1>
-        <p class="text-sm text-slate-500 mt-0.5">
-          Log a prospect on the field in Ado-Ekiti &amp; generate an instant $0.00 WhatsApp QR handshake.
-        </p>
+<div class="page-head">
+  <span class="eyebrow">{% icon "map-pin" "icon-sm" %} Field outreach</span>
+  <h1 class="page-title" style="margin-top:6px">Log a new contact</h1>
+  <p class="page-sub">Takes about 15 seconds. Next, they scan a QR code to start a WhatsApp chat with the church.</p>
+</div>
+
+<form method="post" novalidate>
+  {% csrf_token %}
+
+  {% if form.errors %}
+    <div class="alert alert-error flash" role="alert" style="margin-bottom:16px">
+      {% icon "alert" %}
+      <div>Please check the highlighted fields below.</div>
+    </div>
+  {% endif %}
+
+  <div class="card card-pad stack">
+    <div class="grid-2">
+      <div class="field">
+        <label class="label" for="id_first_name">First name <span class="req" aria-hidden="true">*</span></label>
+        <input class="input {% if form.first_name.errors %}is-invalid{% endif %}" type="text" name="first_name" id="id_first_name"
+               value="{{ form.first_name.value|default:'' }}" placeholder="e.g. Tunde"
+               autocomplete="off" autocapitalize="words" required autofocus
+               {% if form.first_name.errors %}aria-invalid="true" aria-describedby="err_first_name"{% endif %} />
+        {% if form.first_name.errors %}<p class="error" id="err_first_name">{{ form.first_name.errors.0 }}</p>{% endif %}
       </div>
-      <span class="shrink-0 inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-        Ado-Ekiti
-      </span>
+      <div class="field">
+        <label class="label" for="id_last_name">Surname <span class="opt">(optional)</span></label>
+        <input class="input" type="text" name="last_name" id="id_last_name"
+               value="{{ form.last_name.value|default:'' }}" placeholder="e.g. Adebayo"
+               autocomplete="off" autocapitalize="words" />
+      </div>
     </div>
 
-    <form method="post" class="space-y-4" novalidate>
-      {% csrf_token %}
-
-      {% if form.non_field_errors %}
-        <div class="p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
-          {{ form.non_field_errors }}
-        </div>
-      {% endif %}
-
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label for="id_first_name" class="block text-sm font-medium text-slate-700 mb-1">
-            First Name <span class="text-rose-500">*</span>
-          </label>
-          <input type="text" name="first_name" id="id_first_name"
-                 value="{{ form.first_name.value|default:'' }}"
-                 placeholder="e.g., Tunde" autocomplete="given-name" autofocus required
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" />
-          {% if form.first_name.errors %}
-            <p class="text-xs text-rose-600 mt-1">{{ form.first_name.errors.0 }}</p>
-          {% endif %}
-        </div>
-
-        <div>
-          <label for="id_last_name" class="block text-sm font-medium text-slate-700 mb-1">
-            Surname <span class="text-slate-400 font-normal">(optional)</span>
-          </label>
-          <input type="text" name="last_name" id="id_last_name"
-                 value="{{ form.last_name.value|default:'' }}"
-                 placeholder="e.g., Adebayo" autocomplete="family-name"
-                 class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" />
-        </div>
+    <div class="field">
+      <label class="label" for="id_phone">WhatsApp number <span class="req" aria-hidden="true">*</span></label>
+      <div class="input-icon">
+        {% icon "smartphone" %}
+        <input class="input {% if form.phone.errors %}is-invalid{% endif %}" type="tel" name="phone" id="id_phone"
+               value="{{ form.phone.value|default:'' }}" placeholder="0803 123 4567"
+               inputmode="tel" autocomplete="off" required
+               aria-describedby="{% if form.phone.errors %}err_phone {% endif %}hint_phone"
+               {% if form.phone.errors %}aria-invalid="true"{% endif %} />
       </div>
+      {% if form.phone.errors %}<p class="error" id="err_phone">{% icon "alert" "icon-sm" %} {{ form.phone.errors.0 }}</p>{% endif %}
+      <p class="hint" id="hint_phone">Any format works: 0803…, 803…, +234…</p>
+    </div>
 
-      <div>
-        <label for="id_phone" class="block text-sm font-medium text-slate-700 mb-1">
-          WhatsApp Phone Number <span class="text-rose-500">*</span>
-        </label>
-        <input type="tel" name="phone" id="id_phone"
-               value="{{ form.phone.value|default:'' }}"
-               placeholder="0803 123 4567 or +234..." inputmode="tel" autocomplete="tel" required
-               class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" />
-        <p class="text-xs text-slate-400 mt-1">Auto-normalizes 0803..., 234..., or +234... to E.164.</p>
-        {% if form.phone.errors %}
-          <p class="text-xs text-rose-600 mt-1 font-medium">{{ form.phone.errors.0 }}</p>
+    <fieldset class="field" style="border:0;padding:0;margin-top:20px">
+      <legend class="label">What happened?</legend>
+      <div class="choices choices-3">
+        {% for value, label, icon_name, tone in outcomes %}
+          <label class="choice tone-{{ tone }}">
+            <input type="radio" name="outreach_outcome" value="{{ value }}"
+                   {% if form.outreach_outcome.value == value or not form.outreach_outcome.value and forloop.first %}checked{% endif %} />
+            <span class="choice-body">
+              <span class="choice-icon">{% icon icon_name %}</span>
+              <span class="choice-title">{{ label }}</span>
+              <span class="choice-check">{% icon "check" "icon-sm" %}</span>
+            </span>
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <div class="field">
+      <label class="label" for="id_location_met">Where did you meet? <span class="opt">(optional)</span></label>
+      <input class="input" type="text" name="location_met" id="id_location_met"
+             value="{{ form.location_met.value|default:'' }}" placeholder="Type or tap a place below"
+             list="ado-ekiti-locations" autocomplete="off" />
+      <datalist id="ado-ekiti-locations">
+        {% for place in locations %}<option value="{{ place }}"></option>{% endfor %}
+      </datalist>
+      <div class="chips" role="group" aria-label="Common places">
+        {% for place in locations %}
+          <button type="button" class="chip {% if form.location_met.value == place %}is-active{% endif %}"
+                  data-fill="{{ place }}" data-target="#id_location_met">{{ place }}</button>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% with winner=form.soul_winner_name.value %}
+    <details class="disclosure" {% if not winner or form.soul_winner_name.errors %}open{% endif %}>
+      <summary>
+        {% icon "user" "icon-sm" %}
+        {% if winner %}
+          <span>Logged by <strong>{{ winner }}</strong></span>
+          <span class="xs subtle" style="margin-left:auto">Change</span>
+        {% else %}
+          <span class="bold">Your name</span>
+          <span class="xs subtle">(remembered on this phone)</span>
         {% endif %}
+        {% icon "chevron-down" "icon-sm chev" %}
+      </summary>
+      <div class="disclosure-body">
+        <label class="sr-only" for="id_soul_winner_name">Your name</label>
+        <input class="input" type="text" name="soul_winner_name" id="id_soul_winner_name"
+               value="{{ winner|default:'' }}" placeholder="e.g. Sis. Funke" autocomplete="name" />
       </div>
-
-      <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1.5">
-          Outreach Outcome
-        </label>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          <label class="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-slate-300 bg-slate-50 has-[:checked]:border-emerald-600 has-[:checked]:bg-emerald-50 has-[:checked]:text-emerald-900 cursor-pointer text-xs sm:text-sm font-semibold transition text-center">
-            <input type="radio" name="outreach_outcome" value="INVITED"
-                   {% if form.outreach_outcome.value != 'GOT_SAVED' and form.outreach_outcome.value != 'FILLED_HOLY_GHOST' %}checked{% endif %}
-                   class="text-emerald-600 focus:ring-emerald-500" />
-            <span>Invited to Church</span>
-          </label>
-          <label class="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-slate-300 bg-slate-50 has-[:checked]:border-amber-600 has-[:checked]:bg-amber-50 has-[:checked]:text-amber-900 cursor-pointer text-xs sm:text-sm font-semibold transition text-center">
-            <input type="radio" name="outreach_outcome" value="GOT_SAVED"
-                   {% if form.outreach_outcome.value == 'GOT_SAVED' %}checked{% endif %}
-                   class="text-amber-600 focus:ring-amber-500" />
-            <span>Got Saved</span>
-          </label>
-          <label class="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-slate-300 bg-slate-50 has-[:checked]:border-violet-600 has-[:checked]:bg-violet-50 has-[:checked]:text-violet-900 cursor-pointer text-xs sm:text-sm font-semibold transition text-center">
-            <input type="radio" name="outreach_outcome" value="FILLED_HOLY_GHOST"
-                   {% if form.outreach_outcome.value == 'FILLED_HOLY_GHOST' %}checked{% endif %}
-                   class="text-violet-600 focus:ring-violet-500" />
-            <span>Got Filled with the Holy Ghost</span>
-          </label>
-        </div>
-      </div>
-
-      <div>
-        <label for="id_location_met" class="block text-sm font-medium text-slate-700 mb-1">
-          Location Met
-        </label>
-        <input type="text" name="location_met" id="id_location_met"
-               value="{{ form.location_met.value|default:'' }}"
-               list="ado-ekiti-locations"
-               placeholder="e.g., Fajuyi Park, Oja Oba, EKSU Gate"
-               class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" />
-        <datalist id="ado-ekiti-locations">
-          <option value="Fajuyi Park"></option>
-          <option value="Oja Oba Market"></option>
-          <option value="EKSU Gate (Iworoko Road)"></option>
-          <option value="ABUAD / Ikere Road"></option>
-          <option value="Ado Poly / Federal Poly Axis"></option>
-          <option value="Basiri / Nova Road"></option>
-          <option value="Okesa / Old Garage"></option>
-          <option value="Adebayo / Ajilosun"></option>
-        </datalist>
-      </div>
-
-      <div>
-        <label for="id_soul_winner_name" class="block text-sm font-medium text-slate-700 mb-1">
-          Soul-Winner Name
-        </label>
-        <input type="text" name="soul_winner_name" id="id_soul_winner_name"
-               value="{{ form.soul_winner_name.value|default:'' }}"
-               placeholder="Your name (saved for next entries)"
-               class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" />
-      </div>
-
-      <button type="submit"
-              class="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold text-base shadow-sm transition">
-        Save &amp; Show Instant QR Handshake &rarr;
-      </button>
-    </form>
+    </details>
+    {% endwith %}
   </div>
-</div>
+
+  <div class="sticky-actions">
+    <button type="submit" class="btn btn-primary btn-lg btn-block">
+      <span class="spinner" aria-hidden="true"></span>
+      {% icon "qr" "icon btn-icon-idle" %} Save &amp; show QR code
+    </button>
+  </div>
+</form>
 {% endblock %}

@@ -1,57 +1,77 @@
 {% extends "outreach/base.html" %}
+{% load ui %}
 
-{% block title %}Sunday Welcome Card — {{ CHURCH_SHORT_NAME }}{% endblock %}
-
-{% block navbar %}
-<header class="bg-emerald-900 text-white py-4 px-4 text-center shadow-sm">
-  <div class="max-w-md mx-auto">
-    <p class="text-xs uppercase tracking-widest text-emerald-200 font-semibold">Personal Invitation</p>
-    <h1 class="text-lg font-bold mt-0.5">{{ CHURCH_NAME }}</h1>
-  </div>
+{% block title %}You're invited{% endblock %}
+{% block header %}
+<header class="public-hero">
+  <span class="brand-mark">{% icon "church" %}</span>
+  <span class="eyebrow">A personal invitation</span>
+  <h1>{{ CHURCH_NAME }}</h1>
 </header>
 {% endblock %}
+{% block main_class %}no-nav{% endblock %}
+{% block bottom_nav %}{% endblock %}
+{% block footer %}{% endblock %}
 
-{% block content %}
-<div class="max-w-md mx-auto">
-  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6 space-y-5">
+{% block main %}
+<div class="container container-narrow public-card">
+  <div class="card card-pad stack">
     <div>
-      <h2 class="text-xl font-bold text-slate-900">Hello {{ contact.first_name }}!</h2>
-      <p class="text-sm text-slate-600 mt-1">
-        We were so glad to meet you{% if contact.location_met %} around <strong>{{ contact.location_met }}</strong>{% endif %}.
-        Let us know in 10 seconds if we can save you a seat this Sunday ({{ CHURCH_SUNDAY_TIME }}) or pray with you.
+      <h2 class="page-title">Hello {{ contact.first_name }}!</h2>
+      <p class="page-sub">
+        We were so glad to meet you{% if contact.location_met %} at <strong>{{ contact.location_met }}</strong>{% endif %}.
+        Will you join us this Sunday? It takes 10 seconds to let us know.
       </p>
     </div>
 
-    <form method="post" class="space-y-4">
+    <form method="post" class="rsvp-form stack">
       {% csrf_token %}
+      {% if form.errors %}
+        <div class="alert alert-error" role="alert">{% icon "alert" %}<div>Please choose one of the options below.</div></div>
+      {% endif %}
 
-      <div class="space-y-2">
-        <label class="block text-sm font-semibold text-slate-800">Will you join us this Sunday?</label>
-        {% for choice_val, choice_label in form.rsvp_status.field.choices %}
-          <label class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50/40 cursor-pointer transition">
-            <input type="radio" name="rsvp_status" value="{{ choice_val }}"
-                   {% if form.rsvp_status.value == choice_val %}checked{% endif %}
-                   class="h-4 w-4 text-emerald-600 focus:ring-emerald-500" required />
-            <span class="text-sm font-medium text-slate-800">{{ choice_label }}</span>
-          </label>
-        {% endfor %}
+      <fieldset style="border:0;padding:0;margin:0">
+        <legend class="label">Will you come this Sunday?</legend>
+        <div class="choices">
+          {% for value, label in form.rsvp_status.field.choices %}
+            <label class="choice {% if value == 'NEED_RIDE' %}tone-teal{% elif value == 'MAYBE' %}tone-gold{% elif value == 'PRAYER_ONLY' %}tone-violet{% else %}tone-brand{% endif %}">
+              <input type="radio" name="rsvp_status" value="{{ value }}" required
+                     {% if form.rsvp_status.value == value %}checked{% endif %} />
+              <span class="choice-body">
+                <span class="choice-icon">
+                  {% if value == 'NEED_RIDE' %}{% icon "bus" %}{% elif value == 'MAYBE' %}{% icon "clock" %}{% elif value == 'PRAYER_ONLY' %}{% icon "heart" %}{% else %}{% icon "calendar" %}{% endif %}
+                </span>
+                <span class="choice-title">{{ label }}</span>
+                <span class="choice-check">{% icon "check" "icon-sm" %}</span>
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <div class="field pickup-field">
+        <label class="label" for="id_rsvp_pickup_landmark">Nearest bus stop or landmark</label>
+        <div class="input-icon">
+          {% icon "map-pin" %}
+          <input class="input" type="text" name="rsvp_pickup_landmark" id="id_rsvp_pickup_landmark"
+                 value="{{ form.rsvp_pickup_landmark.value|default:'' }}"
+                 placeholder="e.g. Fajuyi Park, EKSU Gate, Oja Oba" autocomplete="off" />
+        </div>
+        <p class="hint">Our bus team will pick you up here for free.</p>
       </div>
 
-      <div>
-        <label for="id_rsvp_pickup_landmark" class="block text-sm font-medium text-slate-700 mb-1">
-          Closest Ado-Ekiti Bus Stop <span class="text-slate-400 font-normal">(if needing a free ride)</span>
-        </label>
-        <input type="text" name="rsvp_pickup_landmark" id="id_rsvp_pickup_landmark"
-               value="{{ form.rsvp_pickup_landmark.value|default:'' }}"
-               placeholder="e.g., Fajuyi Park, EKSU Gate, Oja Oba"
-               class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-      </div>
-
-      <button type="submit"
-              class="w-full py-3.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-base shadow-sm transition">
-        Confirm &amp; Sync My Card
+      <button type="submit" class="btn btn-primary btn-lg btn-block">
+        <span class="spinner" aria-hidden="true"></span> Send my answer
       </button>
     </form>
   </div>
+
+  {% with q=CHURCH_NAME|add:", "|add:CHURCH_ADDRESS %}
+  <div class="card card-pad info-list" style="margin-top:14px">
+    <div>{% icon "clock" %}<div><div class="bold">{{ CHURCH_SUNDAY_TIME }}</div><div class="small muted">Come as you are. You'll be warmly welcomed.</div></div></div>
+    <div>{% icon "map-pin" %}<div><div class="bold">{{ CHURCH_ADDRESS }}</div><a class="small" href="https://www.google.com/maps/search/?api=1&amp;query={{ q|urlencode }}" target="_blank" rel="noopener">Get directions</a></div></div>
+  </div>
+  {% endwith %}
+  <p class="center xs subtle" style="margin:20px 0 8px">Sent with care by the {{ CHURCH_SHORT_NAME }} follow-up team.</p>
 </div>
 {% endblock %}

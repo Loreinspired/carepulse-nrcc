@@ -1,44 +1,48 @@
 {% extends "outreach/base.html" %}
+{% load ui %}
 
-{% block title %}RSVP Confirmed — {{ CHURCH_SHORT_NAME }}{% endblock %}
-
-{% block navbar %}
-<header class="bg-emerald-900 text-white py-4 px-4 text-center shadow-sm">
-  <div class="max-w-md mx-auto">
-    <p class="text-xs uppercase tracking-widest text-emerald-200 font-semibold">God Bless You</p>
-    <h1 class="text-lg font-bold mt-0.5">{{ CHURCH_NAME }}</h1>
-  </div>
+{% block title %}Thank you{% endblock %}
+{% block header %}
+<header class="public-hero">
+  <span class="brand-mark">{% icon "church" %}</span>
+  <span class="eyebrow">God bless you</span>
+  <h1>{{ CHURCH_NAME }}</h1>
 </header>
 {% endblock %}
+{% block main_class %}no-nav{% endblock %}
+{% block bottom_nav %}{% endblock %}
+{% block footer %}{% endblock %}
 
-{% block content %}
-<div class="max-w-md mx-auto">
-  <div class="bg-white rounded-2xl shadow-sm border border-emerald-200 p-6 text-center space-y-4">
-    <div class="mx-auto w-12 h-12 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xl font-bold">
-      &#10003;
+{% block main %}
+<div class="container container-narrow public-card">
+  <div class="card card-pad center stack">
+    <div class="success-banner" style="justify-content:center;background:none;border:0;padding:0">
+      <span class="check" style="width:56px;height:56px">{% icon "check" "icon-lg" %}</span>
+    </div>
+    <div>
+      <h2 class="page-title">Thank you, {{ contact.first_name }}!</h2>
+      <p class="page-sub">We've got your answer:</p>
+      <p style="margin-top:8px"><span class="badge badge-teal" style="font-size:0.95rem;padding:6px 14px">{{ contact.get_rsvp_status_display }}</span></p>
     </div>
 
-    <h2 class="text-xl font-bold text-slate-900">Thank You, {{ contact.first_name }}!</h2>
-    <p class="text-sm text-slate-600">
-      Your response has been received by our care team:
-      <strong class="block text-emerald-800 mt-1">{{ contact.get_rsvp_status_display }}</strong>
-    </p>
-
-    {% if contact.rsvp_pickup_landmark %}
-      <p class="text-xs text-slate-500 bg-slate-50 rounded-xl p-2.5 border border-slate-200">
-        Pickup Landmark Noted: <strong>{{ contact.rsvp_pickup_landmark }}</strong>
-      </p>
+    {% if contact.rsvp_status == "NEED_RIDE" %}
+      <div class="alert alert-info" style="text-align:left">
+        {% icon "bus" %}
+        <div>{% if contact.rsvp_pickup_landmark %}Our bus team will pick you up at <strong>{{ contact.rsvp_pickup_landmark }}</strong>. We'll message you before Sunday.{% else %}Our bus team will message you to arrange your free pickup.{% endif %}</div>
+      </div>
     {% endif %}
 
-    <div class="text-xs text-slate-500 pt-2 border-t border-slate-100 space-y-1">
-      <div><strong>Service Time:</strong> {{ CHURCH_SUNDAY_TIME }}</div>
-      <div><strong>Location:</strong> {{ CHURCH_ADDRESS }}</div>
-    </div>
-
-    <a href="{{ church_wame_url }}" target="_blank" rel="noopener"
-       class="block w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm transition">
-      Chat With Us on WhatsApp
+    <a href="{{ church_wame_url }}" target="_blank" rel="noopener" class="btn btn-primary btn-lg btn-block">
+      {% icon "chat" %} Chat with us on WhatsApp
     </a>
+    <a href="{% url 'outreach:rsvp_card' contact.rsvp_token %}" class="btn btn-ghost btn-block">Change my answer</a>
   </div>
+
+  {% with q=CHURCH_NAME|add:", "|add:CHURCH_ADDRESS %}
+  <div class="card card-pad info-list" style="margin-top:14px">
+    <div>{% icon "clock" %}<div><div class="bold">{{ CHURCH_SUNDAY_TIME }}</div></div></div>
+    <div>{% icon "map-pin" %}<div><div class="bold">{{ CHURCH_ADDRESS }}</div><a class="small" href="https://www.google.com/maps/search/?api=1&amp;query={{ q|urlencode }}" target="_blank" rel="noopener">Get directions</a></div></div>
+  </div>
+  {% endwith %}
 </div>
 {% endblock %}
